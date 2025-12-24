@@ -13,11 +13,21 @@
             --white-glow: #ffffff;
             --dark-purple: #3b2a54;
             --pure-black: #000000;
+            --warm-dark: #262624;
         }
 
         body {
             background: var(--pure-black);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            transition: background 0.3s ease;
+        }
+
+        body.light-mode {
+            background: var(--warm-dark);
+        }
+
+        body.light-mode .card-inner {
+            background: rgba(50, 50, 48, 0.9);
         }
 
         .card-3d {
@@ -185,14 +195,20 @@
                     class="fixed top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-gray-300 px-4 py-2 rounded-lg text-sm opacity-0 transition-opacity duration-300 pointer-events-none">
                     Copied!</div>
             </div>
-            <div class="text-right">
-                <div class="refresh-btn inline-block" id="refresh-container">
-                    <button onclick="fetchQuota()" id="refresh-btn"
-                        class="px-6 py-2 rounded-lg font-bold text-gray-300">
-                        Refresh
-                    </button>
+            <div class="text-right flex items-center gap-4">
+                <button onclick="toggleTheme()" id="theme-btn"
+                    class="px-3 py-2 rounded-lg text-gray-500 hover:text-gray-300 text-sm transition-all">
+                    ☀️
+                </button>
+                <div>
+                    <div class="refresh-btn inline-block" id="refresh-container">
+                        <button onclick="fetchQuota()" id="refresh-btn"
+                            class="px-6 py-2 rounded-lg font-bold text-gray-300">
+                            Refresh
+                        </button>
+                    </div>
+                    <p id="last-updated" class="text-gray-600 text-xs mt-2"></p>
                 </div>
-                <p id="last-updated" class="text-gray-600 text-xs mt-2"></p>
             </div>
         </div>
 
@@ -212,6 +228,21 @@
 
     <script>
         const API_BASE = 'http://localhost:8964';
+
+        // Theme toggle
+        function toggleTheme() {
+            document.body.classList.toggle('light-mode');
+            const btn = document.getElementById('theme-btn');
+            const isLight = document.body.classList.contains('light-mode');
+            btn.textContent = isLight ? '🌙' : '☀️';
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        }
+
+        // Load saved theme
+        if (localStorage.getItem('theme') === 'light') {
+            document.body.classList.add('light-mode');
+            document.getElementById('theme-btn').textContent = '🌙';
+        }
 
         // 3D 倾斜效果
         function init3DEffect() {
