@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anti-API Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --gemini-blue: #4796E3;
+            --claude-orange: #DA7756;
+            --white-glow: #ffffff;
+            --dark-purple: #3b2a54;
+            --pure-black: #000000;
+        }
+
+        body {
+            background: var(--pure-black);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        .card-3d {
+            perspective: 1000px;
+        }
+
+        .card-inner {
+            transform-style: preserve-3d;
+            transition: box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+            background: rgba(17, 17, 17, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(59, 42, 84, 0.3);
+        }
+
+        /* Gemini - 蓝色背景光晕 */
+        .card-3d[data-type="gemini"].active .card-inner {
+            background: rgba(71, 150, 227, 0.15);
+            border-color: var(--gemini-blue);
+            animation: gemini-breathe 2s ease-in-out infinite;
+        }
+
+        @keyframes gemini-breathe {
+
+            0%,
+            100% {
+                box-shadow: 0 0 20px rgba(71, 150, 227, 0.4),
+                    0 0 40px rgba(71, 150, 227, 0.2);
+            }
+
+            50% {
+                box-shadow: 0 0 35px rgba(71, 150, 227, 0.7),
+                    0 0 70px rgba(71, 150, 227, 0.4);
+            }
+        }
+
+        .card-3d[data-type="gemini"].active .progress-bar {
+            background: var(--gemini-blue);
+            box-shadow: 0 0 15px var(--gemini-blue);
+        }
+
+        .card-3d[data-type="gemini"].active .status-dot {
+            background: var(--gemini-blue);
+            box-shadow: 0 0 10px var(--gemini-blue);
+        }
+
+        /* Claude - 橙色背景光晕 */
+        .card-3d[data-type="claude"].active .card-inner {
+            background: rgba(218, 119, 86, 0.15);
+            border-color: var(--claude-orange);
+            animation: claude-breathe 2s ease-in-out infinite;
+        }
+
+        @keyframes claude-breathe {
+
+            0%,
+            100% {
+                box-shadow: 0 0 20px rgba(218, 119, 86, 0.4),
+                    0 0 40px rgba(218, 119, 86, 0.2);
+            }
+
+            50% {
+                box-shadow: 0 0 35px rgba(218, 119, 86, 0.7),
+                    0 0 70px rgba(218, 119, 86, 0.4);
+            }
+        }
+
+        .card-3d[data-type="claude"].active .progress-bar {
+            background: var(--claude-orange);
+            box-shadow: 0 0 15px var(--claude-orange);
+        }
+
+        .card-3d[data-type="claude"].active .status-dot {
+            background: var(--claude-orange);
+            box-shadow: 0 0 10px var(--claude-orange);
+        }
+
+        /* GPT - 白色背景光晕 */
+        .card-3d[data-type="gpt"].active .card-inner {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--white-glow);
+            animation: gpt-breathe 2s ease-in-out infinite;
+        }
+
+        @keyframes gpt-breathe {
+
+            0%,
+            100% {
+                box-shadow: 0 0 20px rgba(255, 255, 255, 0.4),
+                    0 0 40px rgba(255, 255, 255, 0.2);
+            }
+
+            50% {
+                box-shadow: 0 0 35px rgba(255, 255, 255, 0.7),
+                    0 0 70px rgba(255, 255, 255, 0.4);
+            }
+        }
+
+        .card-3d[data-type="gpt"].active .progress-bar {
+            background: var(--white-glow);
+            box-shadow: 0 0 15px var(--white-glow);
+        }
+
+        .card-3d[data-type="gpt"].active .status-dot {
+            background: var(--white-glow);
+            box-shadow: 0 0 10px var(--white-glow);
+        }
+
+        /* Refresh 按钮 - 白色霓虹 */
+        .refresh-btn {
+            perspective: 1000px;
+        }
+
+        .refresh-btn button {
+            transform-style: preserve-3d;
+            transition: box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+            background: rgba(17, 17, 17, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(59, 42, 84, 0.3);
+        }
+
+        .refresh-btn.active button {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--white-glow);
+            backdrop-filter: blur(20px);
+            animation: gpt-breathe 2s ease-in-out infinite;
+        }
+
+        .progress-bar {
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot {
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        .card-3d.active .status-dot {
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+        }
+    </style>
+</head>
+
+<body class="min-h-screen p-6">
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="mb-8 flex items-start justify-between">
+            <div>
+                <h1 class="text-4xl font-bold text-gray-300">Anti-API Model Quotas</h1>
+                <p id="plan-info" class="text-gray-500 text-sm font-bold mt-1">Loading...</p>
+                <div id="copy-toast"
+                    class="fixed top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-gray-300 px-4 py-2 rounded-lg text-sm opacity-0 transition-opacity duration-300 pointer-events-none">
+                    Copied!</div>
+            </div>
+            <div class="text-right">
+                <div class="refresh-btn inline-block" id="refresh-container">
+                    <button onclick="fetchQuota()" id="refresh-btn"
+                        class="px-6 py-2 rounded-lg font-bold text-gray-300">
+                        Refresh
+                    </button>
+                </div>
+                <p id="last-updated" class="text-gray-600 text-xs mt-2"></p>
+            </div>
+        </div>
+
+        <!-- Quota Grid -->
+        <div id="quota-grid" class="space-y-6">
+            <!-- Loading placeholder -->
+            <div class="grid grid-cols-3 gap-4">
+                <div class="card-3d">
+                    <div class="card-inner rounded-lg p-4 animate-pulse">
+                        <div class="h-3 bg-gray-800 rounded w-1/2 mb-3"></div>
+                        <div class="h-6 bg-gray-800 rounded w-2/3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8964';
+
+        // 3D 倾斜效果
+        function init3DEffect() {
+            // 卡片效果
+            document.querySelectorAll('.card-3d').forEach(card => {
+                const inner = card.querySelector('.card-inner');
+
+                card.addEventListener('mousemove', (e) => {
+                    const rect = card.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+
+                    // 计算旋转角度 (最大 15 度)
+                    const rotateX = ((y - centerY) / centerY) * -15;
+                    const rotateY = ((x - centerX) / centerX) * 15;
+
+                    inner.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                    card.classList.add('active');
+                });
+
+                card.addEventListener('mouseleave', () => {
+                    inner.style.transform = 'rotateX(0) rotateY(0)';
+                    card.classList.remove('active');
+                });
+            });
+
+            // Refresh 按钮效果
+            const refreshContainer = document.getElementById('refresh-container');
+            const refreshBtn = document.getElementById('refresh-btn');
+
+            if (refreshContainer && refreshBtn) {
+                refreshContainer.addEventListener('mousemove', (e) => {
+                    const rect = refreshContainer.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+
+                    const rotateX = ((y - centerY) / centerY) * -10;
+                    const rotateY = ((x - centerX) / centerX) * 10;
+
+                    refreshBtn.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                    refreshContainer.classList.add('active');
+                });
+
+                refreshContainer.addEventListener('mouseleave', () => {
+                    refreshBtn.style.transform = 'rotateX(0) rotateY(0)';
+                    refreshContainer.classList.remove('active');
+                });
+            }
+        }
+
+        function formatResetTime(resetTime) {
+            const now = new Date();
+            const reset = new Date(resetTime);
+            const diffMs = reset - now;
+
+            if (diffMs <= 0) return 'Resetting...';
+
+            const hours = Math.floor(diffMs / (1000 * 60 * 60));
+            const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+            if (hours > 0) return `${hours}h ${minutes}m`;
+            return `${minutes}m`;
+        }
+
+        function getModelType(label) {
+            if (label.includes('Claude')) return 'claude';
+            if (label.includes('Gemini')) return 'gemini';
+            if (label.includes('GPT')) return 'gpt';
+            return 'default';
+        }
+
+        function sortModels(models) {
+            // Claude: Sonnet 4.5, Sonnet 4.5 Thinking, Opus Thinking
+            const claudeOrder = ['Claude Sonnet 4.5', 'Claude Sonnet 4.5 (Thinking)', 'Claude Opus 4.5 (Thinking)'];
+            const claude = claudeOrder.map(name => models.find(m => m.label === name)).filter(Boolean);
+
+            // Gemini: Flash, Pro Low, Pro High
+            const geminiOrder = ['Gemini 3 Flash', 'Gemini 3 Pro (Low)', 'Gemini 3 Pro (High)'];
+            const gemini = geminiOrder.map(name => models.find(m => m.label === name)).filter(Boolean);
+
+            const gpt = models.filter(m => m.label.includes('GPT')).slice(0, 3);
+
+            return { claude, gemini, gpt };
+        }
+
+        function getModelId(label) {
+            const idMap = {
+                'Claude Sonnet 4.5': 'claude-sonnet-4-5',
+                'Claude Sonnet 4.5 (Thinking)': 'claude-sonnet-4-5-thinking',
+                'Claude Opus 4.5 (Thinking)': 'claude-opus-4-5-thinking',
+                'Gemini 3 Flash': 'gemini-3-flash',
+                'Gemini 3 Pro (Low)': 'gemini-3-pro-low',
+                'Gemini 3 Pro (High)': 'gemini-3-pro-high',
+                'GPT-OSS 120B (Medium)': 'gpt-oss-120b'
+            };
+            return idMap[label] || label.toLowerCase().replace(/[\s()]/g, '-');
+        }
+
+        function copyModelId(modelId) {
+            navigator.clipboard.writeText(modelId);
+            const toast = document.getElementById('copy-toast');
+            toast.textContent = `Copied: ${modelId}`;
+            toast.classList.remove('opacity-0');
+            toast.classList.add('opacity-100');
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 1500);
+        }
+
+        function renderModelCard(model) {
+            const percentage = Math.round(model.remainingPercentage);
+            const type = getModelType(model.label);
+            const modelId = getModelId(model.label);
+
+            return `
+                <div class="card-3d cursor-pointer" data-type="${type}" data-model-id="${modelId}" onclick="copyModelId('${modelId}')">
+                    <div class="card-inner rounded-lg p-4">
+                        <!-- Header -->
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="font-bold text-gray-300 text-sm">${model.label}</span>
+                            <div class="status-dot w-1.5 h-1.5 rounded-full"></div>
+                        </div>
+                        
+                        <!-- Percentage -->
+                        <div class="mb-3">
+                            <span class="text-3xl font-bold text-gray-300">
+                                ${percentage}%
+                            </span>
+                        </div>
+                        
+                        <!-- Progress Bar -->
+                        <div class="mb-2 h-1.5 bg-gray-900 rounded-full overflow-hidden">
+                            <div class="progress-bar h-full rounded-full transition-all" 
+                                 style="width: ${percentage}%;"></div>
+                        </div>
+                        
+                        <!-- Reset Time -->
+                        <div class="text-xs text-gray-500 font-medium">
+                            ${formatResetTime(model.resetTime)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function fetchQuota() {
+            try {
+                const response = await fetch(`${API_BASE}/quota/json`);
+                const data = await response.json();
+
+                if (data.error) {
+                    document.getElementById('plan-info').innerHTML =
+                        `<span class="text-gray-300">Failed to load quota</span>`;
+                    return;
+                }
+
+                // Update plan info
+                const planText = data.planName ? `Plan: ${data.planName}` : 'Quota Information';
+                document.getElementById('plan-info').innerHTML =
+                    `<span class="text-gray-300">${planText}</span> <span class="text-gray-600 text-xs">• Click to copy model ID</span>`;
+
+                // Sort and render models
+                const sorted = sortModels(data.models);
+                const grid = document.getElementById('quota-grid');
+
+                let html = '';
+
+                // Claude row
+                if (sorted.claude.length > 0) {
+                    html += `<div class="grid grid-cols-3 gap-4">
+                        ${sorted.claude.map(m => renderModelCard(m)).join('')}
+                    </div>`;
+                }
+
+                // Gemini row
+                if (sorted.gemini.length > 0) {
+                    html += `<div class="grid grid-cols-3 gap-4">
+                        ${sorted.gemini.map(m => renderModelCard(m)).join('')}
+                    </div>`;
+                }
+
+                // GPT row
+                if (sorted.gpt.length > 0) {
+                    html += `<div class="grid grid-cols-3 gap-4">
+                        ${sorted.gpt.map(m => renderModelCard(m)).join('')}
+                    </div>`;
+                }
+
+                grid.innerHTML = html;
+
+                // 重新初始化 3D 效果
+                init3DEffect();
+
+                // Update timestamp
+                document.getElementById('last-updated').innerHTML =
+                    `Last updated: <span class="font-bold text-gray-300">${new Date().toLocaleTimeString()}</span>`;
+
+            } catch (error) {
+                document.getElementById('plan-info').innerHTML =
+                    `<span class="text-gray-300">Connection failed</span>`;
+                document.getElementById('quota-grid').innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-gray-500 mb-4">Unable to connect to ${API_BASE}</p>
+                        <button onclick="fetchQuota()" 
+                                class="px-6 py-2 rounded-lg font-bold text-gray-300"
+                                style="background: var(--dark-purple);">
+                            Retry
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        // Initial load
+        fetchQuota();
+        init3DEffect();
+
+        // Auto refresh every 60 seconds
+        setInterval(fetchQuota, 60000);
+    </script>
+</body>
+
+</html>

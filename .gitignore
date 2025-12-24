@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Build output
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/tmp/
+
+# Sensitive data (抓包文件)
+*.har
+抓包*.json
+payload*.json
+
+# Local config
+settings.json
+.env
+.env.*
+
+# Temporary files
+fetch*
+data.md
+tasks.md
+
+# Reference projects
+copilot-api*/

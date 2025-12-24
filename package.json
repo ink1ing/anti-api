@@ -1,0 +1,28 @@
+{
+  "name": "anti-api",
+  "version": "0.1.0",
+  "description": "Antigravity API proxy - exposes Antigravity's built-in LLMs as Anthropic-compatible API",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/main.ts start",
+    "start": "bun run src/main.ts start",
+    "build": "bun build src/main.ts --outdir dist --target bun",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.2.3",
+    "@connectrpc/connect": "^2.0.0",
+    "@connectrpc/connect-node": "^2.0.0",
+    "@connectrpc/connect-web": "^2.1.1",
+    "better-sqlite3": "^11.7.0",
+    "citty": "^0.1.6",
+    "consola": "^3.2.3",
+    "hono": "^4.6.14",
+    "undici": "^7.16.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/bun": "latest",
+    "typescript": "^5.7.2"
+  }
+}
