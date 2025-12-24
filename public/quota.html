@@ -316,6 +316,56 @@
                     refreshContainer.classList.remove('active');
                 });
             }
+
+            // Log out 按钮效果
+            const logoutContainer = document.getElementById('logout-container');
+            const logoutBtn = document.getElementById('logout-btn');
+
+            if (logoutContainer && logoutBtn) {
+                logoutContainer.addEventListener('mousemove', (e) => {
+                    const rect = logoutContainer.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+
+                    const rotateX = ((y - centerY) / centerY) * -10;
+                    const rotateY = ((x - centerX) / centerX) * 10;
+
+                    logoutBtn.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                    logoutContainer.classList.add('active');
+                });
+
+                logoutContainer.addEventListener('mouseleave', () => {
+                    logoutBtn.style.transform = 'rotateX(0) rotateY(0)';
+                    logoutContainer.classList.remove('active');
+                });
+            }
+
+            // Theme 按钮效果
+            const themeContainer = document.getElementById('theme-container');
+            const themeBtn = document.getElementById('theme-btn');
+
+            if (themeContainer && themeBtn) {
+                themeContainer.addEventListener('mousemove', (e) => {
+                    const rect = themeContainer.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+
+                    const rotateX = ((y - centerY) / centerY) * -10;
+                    const rotateY = ((x - centerX) / centerX) * 10;
+
+                    themeBtn.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                    themeContainer.classList.add('active');
+                });
+
+                themeContainer.addEventListener('mouseleave', () => {
+                    themeBtn.style.transform = 'rotateX(0) rotateY(0)';
+                    themeContainer.classList.remove('active');
+                });
+            }
         }
 
         function formatResetTime(resetTime) {
