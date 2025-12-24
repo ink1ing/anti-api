@@ -15,10 +15,12 @@
 
 > ⚠️ **Disclaimer**: This project is based on reverse engineering of Antigravity. Future compatibility is not guaranteed. Use at your own risk. Not officially supported.
 
+> ⚠️ **Limitation**: Anti-API supports **chat only**. Claude Code's tool use (file operations, command execution) is **NOT supported** because Antigravity does not return tool_use format responses.
+
 ## Features
 
 - 🚀 **Full Model Support** - Access Opus 4.5 Thinking, Sonnet 4.5 Thinking, Gemini 3 Pro High and more
-- 🔌 **Anthropic API Compatible** - Works with Claude Code, Cherry Studio, ChatWise, Obsidian Copilot
+- 🔌 **Anthropic API Compatible** - Works with Cherry Studio, ChatWise, Obsidian Copilot (chat mode)
 - 📊 **Quota Dashboard** - Built-in web UI to monitor model usage at `http://localhost:8964`
 - ⚡ **One-Click Start** - Double-click `start.command` to launch
 - 🪶 **Lightweight** - Minimal memory footprint
@@ -140,10 +142,12 @@ MIT
 
 > ⚠️ **免责声明**：本项目基于 Antigravity 最新版本逆向开发，未来新版本的可用性未知。未受官方支持，使用风险自负。
 
+> ⚠️ **限制说明**：Anti-API 仅支持**纯对话模式**。Claude Code 的工具调用（文件操作、命令执行）**不支持**，因为 Antigravity 不返回 tool_use 格式的响应。
+
 ## 特性
 
 - 🚀 **完整模型支持** - 支持 Opus 4.5 Thinking / Sonnet 4.5 Thinking / Gemini 3 Pro High 等模型
-- 🔌 **Anthropic API 兼容** - 支持 Claude Code、Cherry Studio、ChatWise、Obsidian Copilot 等工具
+- 🔌 **Anthropic API 兼容** - 支持 Cherry Studio、ChatWise、Obsidian Copilot 等聊天工具
 - 📊 **额度查看面板** - 内置 Web UI，访问 `http://localhost:8964` 即可查看
 - ⚡ **一键启动** - 双击 `start.command` 即可运行
 - 🪶 **极低内存占用** - 轻量级设计
