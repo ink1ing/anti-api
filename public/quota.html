@@ -195,26 +195,29 @@
                     class="fixed top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-gray-300 px-4 py-2 rounded-lg text-sm opacity-0 transition-opacity duration-300 pointer-events-none">
                     Copied!</div>
             </div>
-            <div class="flex items-center gap-3">
-                <div class="refresh-btn inline-block" id="logout-container">
-                    <a href="antigravity://settings" id="logout-btn"
-                        class="px-6 py-2 rounded-lg font-bold text-gray-300 inline-block">
-                        Log out
-                    </a>
+            <div class="text-right">
+                <div class="flex items-center gap-3 justify-end">
+                    <div class="refresh-btn inline-block" id="logout-container">
+                        <button onclick="window.open('antigravity://settings')" id="logout-btn"
+                            class="px-6 py-2 rounded-lg font-bold text-gray-300">
+                            Log out
+                        </button>
+                    </div>
+                    <div class="refresh-btn inline-block" id="refresh-container">
+                        <button onclick="fetchQuota()" id="refresh-btn"
+                            class="px-6 py-2 rounded-lg font-bold text-gray-300">
+                            Refresh
+                        </button>
+                    </div>
+                    <div class="refresh-btn inline-block" id="theme-container">
+                        <button onclick="toggleTheme()" id="theme-btn"
+                            class="px-6 py-2 rounded-lg font-bold text-gray-300">
+                            Light
+                        </button>
+                    </div>
                 </div>
-                <div class="refresh-btn inline-block" id="refresh-container">
-                    <button onclick="fetchQuota()" id="refresh-btn"
-                        class="px-6 py-2 rounded-lg font-bold text-gray-300">
-                        Refresh
-                    </button>
-                </div>
-                <div class="refresh-btn inline-block" id="theme-container">
-                    <button onclick="toggleTheme()" id="theme-btn" class="px-6 py-2 rounded-lg font-bold text-gray-300">
-                        Light
-                    </button>
-                </div>
+                <p id="last-updated" class="text-gray-600 text-xs mt-2"></p>
             </div>
-            <p id="last-updated" class="text-gray-600 text-xs mt-2 text-right"></p>
         </div>
 
         <!-- Quota Grid -->
