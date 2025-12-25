@@ -159,7 +159,7 @@ MIT
 ## 前置要求
 
 - 安装 [Antigravity](https://antigravity.dev) 并**登录账号**
-- 有效的 **Google AI 订阅**（用于模型访问）
+- 登录 **Google账号**（免费即可，pro计划额度更高）
 - 安装 [Bun](https://bun.sh) 运行时
 
 ## 快速开始
