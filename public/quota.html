@@ -220,7 +220,7 @@
                 <h1 class="text-3xl font-bold text-gray-300">Anti-API Quotas Dashboard</h1>
                 <p id="plan-info" class="text-gray-500 text-sm font-bold mt-1">Loading...</p>
                 <div id="copy-toast"
-                    class="fixed top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-gray-300 px-4 py-2 rounded-lg text-sm opacity-0 transition-opacity duration-300 pointer-events-none">
+                    class="fixed bottom-8 right-8 bg-gray-800 text-gray-300 px-4 py-2 rounded-lg text-sm opacity-0 translate-x-8 transition-all duration-300 pointer-events-none z-50">
                     Copied!</div>
             </div>
             <div class="text-right">
@@ -232,7 +232,7 @@
                         </button>
                     </div>
                     <div class="refresh-btn inline-block" id="refresh-container">
-                        <button onclick="fetchQuota()" id="refresh-btn"
+                        <button onclick="fetchQuota(true)" id="refresh-btn"
                             class="px-4 py-1.5 rounded-lg font-bold text-gray-300 text-sm">
                             Refresh
                         </button>
@@ -393,16 +393,20 @@
             return idMap[label] || label.toLowerCase().replace(/[\s()]/g, '-');
         }
 
+        function showToast(message) {
+            const toast = document.getElementById('copy-toast');
+            toast.textContent = message;
+            toast.classList.remove('opacity-0', 'translate-x-8');
+            toast.classList.add('opacity-100', 'translate-x-0');
+            setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-x-0');
+                toast.classList.add('opacity-0', 'translate-x-8');
+            }, 2000);
+        }
+
         function copyModelId(modelId) {
             navigator.clipboard.writeText(modelId);
-            const toast = document.getElementById('copy-toast');
-            toast.textContent = `Copied: ${modelId}`;
-            toast.classList.remove('opacity-0');
-            toast.classList.add('opacity-100');
-            setTimeout(() => {
-                toast.classList.remove('opacity-100');
-                toast.classList.add('opacity-0');
-            }, 1500);
+            showToast(`Copied: ${modelId}`);
         }
 
         function renderModelCard(model) {
@@ -441,7 +445,7 @@
             `;
         }
 
-        async function fetchQuota() {
+        async function fetchQuota(showToastMsg = false) {
             try {
                 const response = await fetch(`${API_BASE}/quota/json`);
                 const data = await response.json();
@@ -459,14 +463,9 @@
                     `<span class="text-gray-300">${email}</span> <span class="text-white text-xs">• ${planText} •</span> <span class="text-gray-600 text-xs">Click to copy model ID</span>`;
 
                 // Show refresh success toast
-                const toast = document.getElementById('copy-toast');
-                toast.textContent = 'Refreshed!';
-                toast.classList.remove('opacity-0');
-                toast.classList.add('opacity-100');
-                setTimeout(() => {
-                    toast.classList.remove('opacity-100');
-                    toast.classList.add('opacity-0');
-                }, 1200);
+                if (showToastMsg) {
+                    showToast('Refreshed!');
+                }
 
                 // Sort and render models
                 const sorted = sortModels(data.models);
@@ -525,7 +524,7 @@
         init3DEffect();
 
         // Auto refresh every 60 seconds
-        setInterval(fetchQuota, 60000);
+        setInterval(() => fetchQuota(false), 60000);
     </script>
 </body>
 
