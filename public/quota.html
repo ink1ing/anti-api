@@ -20,29 +20,34 @@
         body {
             background: var(--pure-black);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            transition: background 0.3s ease;
         }
 
-        body.light-mode {
-            background: var(--warm-dark);
+        @media (prefers-color-scheme: light) {
+            body {
+                background: var(--warm-dark);
+            }
         }
 
-        body.light-mode .card-inner {
-            background: rgba(50, 50, 48, 0.9);
+        @media (prefers-color-scheme: light) {
+            .card-inner {
+                background: rgba(50, 50, 48, 0.9);
+            }
+
+            .refresh-btn button,
+            .refresh-btn a {
+                background: rgba(50, 50, 48, 0.9);
+            }
+
+            #copy-toast {
+                background: rgba(50, 50, 48, 0.95);
+            }
+
+            .bg-gray-900 {
+                background-color: rgba(30, 30, 28, 0.8) !important;
+            }
         }
 
-        body.light-mode .refresh-btn button,
-        body.light-mode .refresh-btn a {
-            background: rgba(50, 50, 48, 0.9);
-        }
 
-        body.light-mode #copy-toast {
-            background: rgba(50, 50, 48, 0.95);
-        }
-
-        body.light-mode .bg-gray-900 {
-            background-color: rgba(30, 30, 28, 0.8) !important;
-        }
 
         .card-3d {
             perspective: 1000px;
@@ -178,14 +183,6 @@
             animation: gemini-breathe 2s ease-in-out infinite;
         }
 
-        /* Theme 按钮 - GPT 白色霓虹 */
-        #theme-container.active button {
-            background: rgba(255, 255, 255, 0.15);
-            border-color: var(--white-glow);
-            backdrop-filter: blur(20px);
-            animation: gpt-breathe 2s ease-in-out infinite;
-        }
-
         .progress-bar {
             background: white;
             transition: all 0.3s ease;
@@ -240,12 +237,7 @@
                             Refresh
                         </button>
                     </div>
-                    <div class="refresh-btn inline-block" id="theme-container">
-                        <button onclick="toggleTheme()" id="theme-btn"
-                            class="px-4 py-1.5 rounded-lg font-bold text-gray-300 text-sm">
-                            Light
-                        </button>
-                    </div>
+
                 </div>
                 <p id="last-updated" class="text-gray-600 text-xs mt-2"></p>
             </div>
@@ -274,21 +266,6 @@
 
     <script>
         const API_BASE = 'http://localhost:8964';
-
-        // Theme toggle
-        function toggleTheme() {
-            document.body.classList.toggle('light-mode');
-            const btn = document.getElementById('theme-btn');
-            const isLight = document.body.classList.contains('light-mode');
-            btn.textContent = isLight ? 'Dark' : 'Light';
-            localStorage.setItem('theme', isLight ? 'light' : 'dark');
-        }
-
-        // Load saved theme
-        if (localStorage.getItem('theme') === 'light') {
-            document.body.classList.add('light-mode');
-            document.getElementById('theme-btn').textContent = 'Dark';
-        }
 
         // 3D 倾斜效果
         function init3DEffect() {
@@ -364,31 +341,6 @@
                 logoutContainer.addEventListener('mouseleave', () => {
                     logoutBtn.style.transform = 'rotateX(0) rotateY(0)';
                     logoutContainer.classList.remove('active');
-                });
-            }
-
-            // Theme 按钮效果
-            const themeContainer = document.getElementById('theme-container');
-            const themeBtn = document.getElementById('theme-btn');
-
-            if (themeContainer && themeBtn) {
-                themeContainer.addEventListener('mousemove', (e) => {
-                    const rect = themeContainer.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    const centerX = rect.width / 2;
-                    const centerY = rect.height / 2;
-
-                    const rotateX = ((y - centerY) / centerY) * -10;
-                    const rotateY = ((x - centerX) / centerX) * 10;
-
-                    themeBtn.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
-                    themeContainer.classList.add('active');
-                });
-
-                themeContainer.addEventListener('mouseleave', () => {
-                    themeBtn.style.transform = 'rotateX(0) rotateY(0)';
-                    themeContainer.classList.remove('active');
                 });
             }
         }
@@ -504,7 +456,7 @@
                 const email = data.userEmail || 'Unknown';
                 const planText = data.planName ? `${data.planName} Plan` : 'Quota';
                 document.getElementById('plan-info').innerHTML =
-                    `<span class="text-gray-300">${email}</span> <span class="text-gray-600 text-xs">• ${planText} • Click to copy model ID</span>`;
+                    `<span class="text-gray-300">${email}</span> <span class="text-white text-xs">• ${planText} •</span> <span class="text-gray-600 text-xs">Click to copy model ID</span>`;
 
                 // Show refresh success toast
                 const toast = document.getElementById('copy-toast');
