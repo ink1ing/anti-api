@@ -177,7 +177,9 @@ bun run src/main.ts start
 
 ### macOS 
 
-双击 `anti-api-start.command` 启动。
+双击 `anti-api-start.command` ，首次运行会提示损坏，这是mac的保护机制
+前往 系统设置 - 隐私 - 底部 - 同意打开.command脚本 - 随后再次双击 `anti-api-start.command`
+
 
 ## Claude Code 配置
 
