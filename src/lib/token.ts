@@ -14,10 +14,17 @@ import { state } from "./state"
 import { AntigravityError } from "./error"
 
 // Antigravity token数据库路径
-const ANTIGRAVITY_DB_PATH = join(
-    homedir(),
-    "Library/Application Support/Antigravity/User/globalStorage/state.vscdb"
-)
+// Windows: %APPDATA%\Antigravity\User\globalStorage\state.vscdb
+// macOS/Linux: ~/Library/Application Support/Antigravity/User/globalStorage/state.vscdb
+const ANTIGRAVITY_DB_PATH = process.platform === "win32"
+    ? join(
+        process.env.APPDATA || join(homedir(), "AppData", "Roaming"),
+        "Antigravity/User/globalStorage/state.vscdb"
+    )
+    : join(
+        homedir(),
+        "Library/Application Support/Antigravity/User/globalStorage/state.vscdb"
+    )
 
 interface AntigravityAuthStatus {
     name: string
