@@ -3,5 +3,6 @@ dist/
 data/
 .DS_Store
 .env*
+.claude/
 proj-1/
 proj-2/
