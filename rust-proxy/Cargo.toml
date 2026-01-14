@@ -1,0 +1,26 @@
+[package]
+name = "anti-proxy"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "anti-proxy"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.7", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = "0.3"
+bytes = "1.5"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+chrono = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -5,11 +5,14 @@
 
 import { state } from "~/lib/state"
 import { refreshAccessToken, getProjectID } from "./oauth"
+import { generateMockProjectId } from "./project-id"
 import * as fs from "fs"
 import * as path from "path"
 import consola from "consola"
 import { authStore } from "~/services/auth/store"
 import { parseRetryDelay } from "~/lib/retry"
+import { fetchAntigravityModels, pickResetTime } from "./quota-fetch"
+import { UpstreamError } from "~/lib/error"
 
 type RateLimitReason =
     | "quota_exhausted"
@@ -65,21 +68,44 @@ function parseRateLimitReason(statusCode: number, errorText: string): RateLimitR
 function defaultRateLimitMs(reason: RateLimitReason, failures: number): number {
     switch (reason) {
         case "quota_exhausted": {
-            if (failures <= 1) return 60_000
-            if (failures === 2) return 5 * 60_000
-            if (failures === 3) return 30 * 60_000
+            // [智能限流] 根据连续失败次数动态调整锁定时间
+            // 第1次: 60s, 第2次: 5min, 第3次: 30min, 第4次+: 2h
+            if (failures <= 1) {
+                consola.warn("检测到配额耗尽 (QUOTA_EXHAUSTED)，第1次失败，锁定 60秒")
+                return 60_000
+            }
+            if (failures === 2) {
+                consola.warn("检测到配额耗尽 (QUOTA_EXHAUSTED)，第2次连续失败，锁定 5分钟")
+                return 5 * 60_000
+            }
+            if (failures === 3) {
+                consola.warn("检测到配额耗尽 (QUOTA_EXHAUSTED)，第3次连续失败，锁定 30分钟")
+                return 30 * 60_000
+            }
+            consola.warn(`检测到配额耗尽 (QUOTA_EXHAUSTED)，第${failures}次连续失败，锁定 2小时`)
             return 2 * 60 * 60_000
         }
         case "rate_limit_exceeded":
+            // 速率限制：通常是短暂的，使用较短的默认值（30秒）
+            consola.debug("检测到速率限制 (RATE_LIMIT_EXCEEDED)，使用默认值 30秒")
             return 30_000
         case "model_capacity_exhausted":
+            // 模型容量耗尽：服务端暂时无可用 GPU 实例
+            // 这是临时性问题，使用较短的重试时间（15秒）
+            consola.warn("检测到模型容量不足 (MODEL_CAPACITY_EXHAUSTED)，服务端暂无可用实例，15秒后重试")
             return 15_000
         case "server_error":
+            // 服务器错误：执行"软避让"，默认锁定 20 秒
+            consola.warn("检测到 5xx 错误，执行 20s 软避让...")
             return 20_000
         default:
+            // 未知原因：使用中等默认值（60秒）
+            consola.debug("无法解析 429 限流原因，使用默认值 60秒")
             return 60_000
     }
 }
+
+const RESET_TIME_BUFFER_MS = 2000
 
 export interface Account {
     id: string
@@ -98,6 +124,8 @@ class AccountManager {
     private currentIndex = 0
     private dataFile: string
     private loaded = false
+    // 🆕 60秒账号锁定：记录最近使用的账号（匹配 proj-1 的 last_used_account）
+    private lastUsedAccount: { accountId: string; timestamp: number } | null = null
 
     constructor() {
         const homeDir = process.env.HOME || process.env.USERPROFILE || "."
@@ -229,6 +257,34 @@ class AccountManager {
     }
 
     /**
+     * 删除账号
+     */
+    removeAccount(accountIdOrEmail: string): boolean {
+        // 先尝试按 ID 删除
+        if (this.accounts.has(accountIdOrEmail)) {
+            this.accounts.delete(accountIdOrEmail)
+            this.save()
+            authStore.deleteAccount("antigravity", accountIdOrEmail)
+            consola.info(`Account removed: ${accountIdOrEmail}`)
+            return true
+        }
+
+        // 再尝试按邮箱删除
+        for (const [id, acc] of this.accounts) {
+            if (acc.email === accountIdOrEmail) {
+                this.accounts.delete(id)
+                this.save()
+                authStore.deleteAccount("antigravity", id)
+                consola.info(`Account removed by email: ${accountIdOrEmail}`)
+                return true
+            }
+        }
+
+        consola.warn(`Account not found: ${accountIdOrEmail}`)
+        return false
+    }
+
+    /**
      * 获取账号数量
      */
     count(): number {
@@ -257,12 +313,13 @@ class AccountManager {
     /**
      * 根据错误信息标记账号限流
      */
-    markRateLimitedFromError(
+    async markRateLimitedFromError(
         accountId: string,
         statusCode: number,
         errorText: string,
-        retryAfterHeader?: string
-    ): { reason: RateLimitReason; durationMs: number } | null {
+        retryAfterHeader?: string,
+        modelId?: string
+    ): Promise<{ reason: RateLimitReason; durationMs: number } | null> {
         const account = this.accounts.get(accountId)
         if (!account) return null
 
@@ -270,12 +327,30 @@ class AccountManager {
         const retryDelayMs = parseRetryDelay(errorText, retryAfterHeader)
         account.consecutiveFailures++
 
-        let durationMs = retryDelayMs ?? defaultRateLimitMs(reason, account.consecutiveFailures)
+        let durationMs = 0
+        let rateLimitedUntil: number | null = null
+
+        // 🆕 proj-1 风格：不在每次 429 时检查配额（避免额外 API 调用消耗速率限制）
+        // 如果没有明确的 retry delay，直接假设是速率限制并应用短暂退避
         if (retryDelayMs !== null) {
+            // API 返回了明确的重试延迟
             durationMs = Math.max(retryDelayMs + 500, 2000)
+            rateLimitedUntil = Date.now() + durationMs
+        } else if (statusCode === 429) {
+            // 没有明确延迟的 429 = 假设是速率限制，应用短暂退避
+            // 不调用 fetchAntigravityModels 避免消耗速率限制
+            consola.info(`Account ${account.email} got 429 without retry-after, assuming rate limit`)
+            durationMs = 5000 // 5 秒短暂退避
+            rateLimitedUntil = Date.now() + durationMs
+            return { reason: "rate_limit_exceeded" as RateLimitReason, durationMs }
         }
 
-        account.rateLimitedUntil = Date.now() + durationMs
+        if (!rateLimitedUntil) {
+            durationMs = defaultRateLimitMs(reason, account.consecutiveFailures)
+            rateLimitedUntil = Date.now() + durationMs
+        }
+
+        account.rateLimitedUntil = rateLimitedUntil
         consola.warn(
             `Account ${account.email} rate limited (${reason}) for ${Math.ceil(durationMs / 1000)}s (failures: ${account.consecutiveFailures})`
         )
@@ -312,6 +387,37 @@ class AccountManager {
 
         if (accountList.length === 0) {
             return null
+        }
+
+        // 🆕 60秒窗口锁定：优先复用最近使用的账号（匹配 proj-1 的设计）
+        // 这避免了频繁切换账号导致的 429 错误
+        if (!forceRotate && this.lastUsedAccount) {
+            const { accountId, timestamp } = this.lastUsedAccount
+            const elapsedMs = now - timestamp
+            if (elapsedMs < 60_000) {
+                const lastAccount = this.accounts.get(accountId)
+                if (lastAccount && (!lastAccount.rateLimitedUntil || lastAccount.rateLimitedUntil <= now)) {
+                    consola.debug(`🔒 60s Window: Reusing account ${lastAccount.email} (${Math.round(elapsedMs / 1000)}s ago)`)
+                    // 刷新 token 如果需要
+                    if (lastAccount.expiresAt > 0 && now > lastAccount.expiresAt - 5 * 60 * 1000) {
+                        try {
+                            const tokens = await refreshAccessToken(lastAccount.refreshToken)
+                            lastAccount.accessToken = tokens.accessToken
+                            lastAccount.expiresAt = now + tokens.expiresIn * 1000
+                            this.save()
+                        } catch (e) {
+                            consola.warn(`Failed to refresh token for ${lastAccount.email}:`, e)
+                            // 继续使用可能过期的 token，让后续请求处理错误
+                        }
+                    }
+                    return {
+                        accessToken: lastAccount.accessToken,
+                        projectId: await this.ensureProjectId(lastAccount),
+                        email: lastAccount.email,
+                        accountId: lastAccount.id,
+                    }
+                }
+            }
         }
 
         // 找到第一个可用账号
@@ -363,40 +469,109 @@ class AccountManager {
                 }
             }
 
+            // 🆕 更新 lastUsedAccount（60秒锁定机制）
+            this.lastUsedAccount = { accountId: account.id, timestamp: Date.now() }
+
             return {
                 accessToken: account.accessToken,
-                projectId: account.projectId || "unknown",
+                projectId: await this.ensureProjectId(account),
                 email: account.email,
                 accountId: account.id,
             }
         }
 
-        // 所有账号都被限流，返回等待时间最短的账号
+        // 所有账号都被限流
         let bestAccount = accountList[0]
+        let minWaitMs: number | null = null
         for (const acc of accountList) {
             if (!acc.rateLimitedUntil) {
                 bestAccount = acc
+                minWaitMs = 0
                 break
             }
-            if (!bestAccount.rateLimitedUntil || (acc.rateLimitedUntil && acc.rateLimitedUntil < bestAccount.rateLimitedUntil)) {
+            const waitMs = Math.max(acc.rateLimitedUntil - now, 0)
+            if (minWaitMs === null || waitMs < minWaitMs) {
+                minWaitMs = waitMs
                 bestAccount = acc
             }
         }
 
-        // 等待限流结束
-        if (bestAccount.rateLimitedUntil && bestAccount.rateLimitedUntil > now) {
-            const waitMs = bestAccount.rateLimitedUntil - now
-            consola.warn(`All accounts rate limited, waiting ${Math.ceil(waitMs / 1000)}s for ${bestAccount.email}...`)
-            await new Promise(resolve => setTimeout(resolve, waitMs))
-            bestAccount.rateLimitedUntil = null
+        if (minWaitMs !== null && minWaitMs <= 2000) {
+            // 🔄 乐观重置：等待时间很短时，清除所有限流记录以解决时序竞争条件
+            consola.warn(`All accounts rate limited, waiting ${Math.ceil(minWaitMs / 1000)}s for sync...`)
+            await new Promise(resolve => setTimeout(resolve, 500))
+            const refreshed = accountList.find(acc => !acc.rateLimitedUntil || acc.rateLimitedUntil <= Date.now())
+            if (refreshed) {
+                return {
+                    accessToken: refreshed.accessToken,
+                    projectId: refreshed.projectId || "unknown",
+                    email: refreshed.email,
+                    accountId: refreshed.id,
+                }
+            }
+            // 乐观重置：清除所有限流记录
+            consola.warn(`🔄 Optimistic reset: Clearing all ${accountList.length} rate limit record(s)`)
+            for (const acc of accountList) {
+                acc.rateLimitedUntil = null
+                acc.consecutiveFailures = 0
+            }
+            return {
+                accessToken: bestAccount.accessToken,
+                projectId: bestAccount.projectId || "unknown",
+                email: bestAccount.email,
+                accountId: bestAccount.id,
+            }
         }
 
-        return {
-            accessToken: bestAccount.accessToken,
-            projectId: bestAccount.projectId || "unknown",
-            email: bestAccount.email,
-            accountId: bestAccount.id,
+        if (minWaitMs !== null && minWaitMs > 2000) {
+            consola.warn(`All accounts rate limited, min wait ${Math.ceil(minWaitMs / 1000)}s`)
+
+            // 🆕 实时配额验证：检查配额是否实际上已经恢复
+            // 当锁定时间很长时，尝试实时获取配额来验证账号是否真的不可用
+            consola.info(`Attempting real-time quota validation for ${accountList.length} locked account(s)...`)
+
+            for (const acc of accountList) {
+                try {
+                    const result = await fetchAntigravityModels(acc.accessToken, acc.projectId)
+                    const resetTime = pickResetTime(result.models)
+
+                    // 检查是否有模型配额可用 (remainingFraction > 0)
+                    const hasAvailableQuota = Object.values(result.models).some(
+                        model => (model.remainingFraction ?? 0) > 0
+                    )
+
+                    if (hasAvailableQuota) {
+                        consola.success(`✅ Account ${acc.email} has available quota! Clearing rate limit.`)
+                        acc.rateLimitedUntil = null
+                        acc.consecutiveFailures = 0
+                        return {
+                            accessToken: acc.accessToken,
+                            projectId: await this.ensureProjectId(acc),
+                            email: acc.email,
+                            accountId: acc.id,
+                        }
+                    }
+
+                    // 更新锁定时间为最新的 reset time
+                    if (resetTime) {
+                        const resetMs = Date.parse(resetTime)
+                        if (Number.isFinite(resetMs)) {
+                            const newLockTime = resetMs + RESET_TIME_BUFFER_MS
+                            if (newLockTime !== acc.rateLimitedUntil) {
+                                consola.info(`Account ${acc.email} reset time updated: ${resetTime}`)
+                                acc.rateLimitedUntil = newLockTime
+                            }
+                        }
+                    }
+                } catch (error) {
+                    consola.debug(`Failed to validate quota for ${acc.email}:`, error)
+                }
+            }
+
+            return null
         }
+
+        return null
     }
 
     /**
@@ -450,10 +625,97 @@ class AccountManager {
 
         return {
             accessToken: account.accessToken,
-            projectId: account.projectId || "unknown",
+            projectId: await this.ensureProjectId(account),
             email: account.email,
             accountId: account.id,
         }
+    }
+
+    private async fetchQuotaResetTime(account: Account, modelId?: string): Promise<number | null> {
+        let refreshed = false
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const result = await fetchAntigravityModels(account.accessToken, account.projectId)
+                if (!account.projectId && result.projectId) {
+                    account.projectId = result.projectId
+                    this.save()
+                    authStore.saveAccount({
+                        id: account.id,
+                        provider: "antigravity",
+                        email: account.email,
+                        accessToken: account.accessToken,
+                        refreshToken: account.refreshToken,
+                        expiresAt: account.expiresAt,
+                        projectId: account.projectId || undefined,
+                        label: account.email,
+                    })
+                }
+
+                const resetTime = pickResetTime(result.models, modelId)
+                if (!resetTime) return null
+
+                const resetMs = Date.parse(resetTime)
+                if (!Number.isFinite(resetMs)) return null
+
+                const buffered = resetMs + RESET_TIME_BUFFER_MS
+                if (buffered <= Date.now()) return null
+                return buffered
+            } catch (error) {
+                if (!refreshed && error instanceof UpstreamError && error.status === 401 && account.refreshToken) {
+                    try {
+                        const tokens = await refreshAccessToken(account.refreshToken)
+                        account.accessToken = tokens.accessToken
+                        account.expiresAt = Date.now() + tokens.expiresIn * 1000
+                        this.save()
+                        authStore.saveAccount({
+                            id: account.id,
+                            provider: "antigravity",
+                            email: account.email,
+                            accessToken: account.accessToken,
+                            refreshToken: account.refreshToken,
+                            expiresAt: account.expiresAt,
+                            projectId: account.projectId || undefined,
+                            label: account.email,
+                        })
+                        refreshed = true
+                        continue
+                    } catch (refreshError) {
+                        consola.warn(`Failed to refresh token for ${account.email}:`, refreshError)
+                        return null
+                    }
+                }
+                return null
+            }
+        }
+
+        return null
+    }
+
+    private async ensureProjectId(account: Account): Promise<string> {
+        if (account.projectId && account.projectId !== "unknown") {
+            return account.projectId
+        }
+
+        let resolved = await getProjectID(account.accessToken)
+        if (!resolved) {
+            resolved = generateMockProjectId()
+            consola.warn(`Account ${account.email} missing project_id, using fallback ${resolved}`)
+        }
+
+        account.projectId = resolved
+        this.save()
+        authStore.saveAccount({
+            id: account.id,
+            provider: "antigravity",
+            email: account.email,
+            accessToken: account.accessToken,
+            refreshToken: account.refreshToken,
+            expiresAt: account.expiresAt,
+            projectId: account.projectId || undefined,
+            label: account.email,
+        })
+        return resolved
     }
 }
 

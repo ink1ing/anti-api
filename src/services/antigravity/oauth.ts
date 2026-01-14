@@ -4,6 +4,7 @@
  */
 
 import https from "https"
+import consola from "consola"
 import { state } from "~/lib/state"
 
 // OAuth 配置（来自 CLIProxyAPI）
@@ -133,7 +134,7 @@ export async function getProjectID(accessToken: string): Promise<string | null> 
         const data = response.data as { cloudaicompanionProject?: string }
         return data.cloudaicompanionProject || null
     } catch (error) {
-        console.error("Failed to get project ID:", error)
+        consola.debug("Failed to get project ID:", error)
         return null
     }
 }
@@ -199,9 +200,9 @@ export async function getAccessToken(): Promise<string> {
             const { saveAuth } = await import("./login")
             saveAuth()
 
-            console.log("[OAuth] Token refreshed successfully")
+            consola.debug("[OAuth] Token refreshed successfully")
         } catch (error) {
-            console.error("[OAuth] Token refresh failed:", error)
+            consola.debug("[OAuth] Token refresh failed:", error)
             // 刷新失败时抛出错误，让用户重新登录
             throw new Error("Token expired and refresh failed. Please re-login.")
         }
@@ -216,7 +217,7 @@ type InsecureResponse = {
     text: string
 }
 
-async function fetchInsecureJson(
+export async function fetchInsecureJson(
     url: string,
     options: { method?: string; headers?: Record<string, string>; body?: string }
 ): Promise<InsecureResponse> {

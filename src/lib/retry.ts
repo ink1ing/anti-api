@@ -148,11 +148,16 @@ export function determineRetryStrategy(
             // 优先使用服务端返回的 Retry-After
             const delayMs = parseRetryDelay(errorText, retryAfterHeader)
             if (delayMs !== null) {
-                // 添加 500ms 缓冲，最大 30 秒
-                const actualDelay = Math.min(delayMs + 500, 30000)
+                // 添加 500ms 缓冲，最小 2 秒防止极高频无效重试，最大 30 秒
+                const actualDelay = Math.min(Math.max(delayMs + 500, 2000), 30000)
                 return { type: "fixed_delay", delayMs: actualDelay }
             }
             const lower = errorText.toLowerCase()
+            // 检查是否是模型容量耗尽（GPU 不足）
+            if (lower.includes("model_capacity") || lower.includes("capacity")) {
+                // 模型容量耗尽：临时性问题，使用较短的固定延迟（15秒）
+                return { type: "fixed_delay", delayMs: 15000 }
+            }
             if (lower.includes("per minute") || lower.includes("rate limit") || lower.includes("too many requests")) {
                 return { type: "linear_backoff", baseMs: 2000 }
             }

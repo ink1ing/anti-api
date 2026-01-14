@@ -3,8 +3,9 @@
  * 确保 API 调用间隔 ≥ minInterval，并且同一时间只有一个请求在处理
  *
  * 重要：Google API 对高频请求和并发请求非常敏感
- * - 间隔至少 1500ms
- * - 同时只允许一个请求
+ * 
+ * 🆕 重构：简化为纯间隔控制，移除复杂的锁逻辑
+ * 匹配 proj-1 的线性退避基准（1000ms）
  */
 
 class RateLimiter {
@@ -12,7 +13,7 @@ class RateLimiter {
     private lastCall: number | null = null
     private queue: Promise<void> = Promise.resolve()
 
-    constructor(minIntervalMs: number = 1500) {
+    constructor(minIntervalMs: number = 1000) {
         this.minInterval = minIntervalMs
     }
 
@@ -90,5 +91,5 @@ class RateLimiter {
 }
 
 // 全局单例，确保所有请求共享同一个限流器
-// 间隔设置为 2000ms（2秒），更保守的设置
-export const rateLimiter = new RateLimiter(2000)
+// 间隔设置为 1000ms（1秒），匹配 proj-1 的线性退避基准
+export const rateLimiter = new RateLimiter(1000)

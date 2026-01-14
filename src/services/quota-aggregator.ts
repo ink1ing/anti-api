@@ -2,17 +2,13 @@ import consola from "consola"
 import https from "https"
 import { authStore } from "~/services/auth/store"
 import { refreshAccessToken } from "~/services/antigravity/oauth"
+import { fetchAntigravityModels as fetchAntigravityModelsRequest, type AntigravityModelInfo } from "~/services/antigravity/quota-fetch"
 import { refreshCodexAccessToken, refreshCodexAccountIfNeeded } from "~/services/codex/oauth"
 import { accountManager } from "~/services/antigravity/account-manager"
 import type { ProviderAccount } from "~/services/auth/types"
+import { UpstreamError } from "~/lib/error"
 
-const CLOUD_CODE_BASE_URL = "https://cloudcode-pa.googleapis.com"
-const USER_AGENT = "antigravity/1.11.3 windows/amd64"
-
-type ModelInfo = {
-    remainingFraction?: number
-    resetTime?: string
-}
+type ModelInfo = AntigravityModelInfo
 
 type AccountBar = {
     key: string
@@ -55,7 +51,7 @@ async function fetchAntigravityQuotas(accounts: ProviderAccount[]): Promise<Acco
     for (const account of accounts) {
         try {
             const refreshed = await refreshAntigravityToken(account)
-            const quotaModels = await fetchAntigravityModels(refreshed)
+            const quotaModels = await fetchAntigravityModelsForAccount(refreshed)
             const bars = buildAntigravityBars(quotaModels)
             results.push({
                 provider: "antigravity",
@@ -108,76 +104,38 @@ async function refreshAntigravityToken(account: ProviderAccount): Promise<Provid
     }
 }
 
-async function fetchAntigravityModels(account: ProviderAccount, hasRefreshed = false): Promise<Record<string, ModelInfo>> {
-    const projectId = await fetchProjectId(account.accessToken)
-    const project = projectId || account.projectId || "bamboo-precept-lgxtn"
-
-    const response = await fetch(`${CLOUD_CODE_BASE_URL}/v1internal:fetchAvailableModels`, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${account.accessToken}`,
-            "Content-Type": "application/json",
-            "User-Agent": USER_AGENT,
-        },
-        body: JSON.stringify({ project }),
-    })
-
-    if (!response.ok) {
-        if (response.status === 401 && account.refreshToken && !hasRefreshed) {
+async function fetchAntigravityModelsForAccount(
+    account: ProviderAccount,
+    hasRefreshed = false
+): Promise<Record<string, ModelInfo>> {
+    try {
+        const result = await fetchAntigravityModelsRequest(account.accessToken, account.projectId)
+        if (!account.projectId && result.projectId) {
+            account.projectId = result.projectId
+            authStore.saveAccount(account)
+        }
+        return result.models
+    } catch (error) {
+        if (error instanceof UpstreamError && error.status === 401 && account.refreshToken && !hasRefreshed) {
             try {
                 const refreshed = await refreshAccessToken(account.refreshToken)
-                const updated = {
-                    ...account,
-                    accessToken: refreshed.accessToken,
-                    expiresAt: Date.now() + refreshed.expiresIn * 1000,
-                }
-                authStore.saveAccount(updated)
-                return fetchAntigravityModels(updated, true)
-            } catch (error) {
-                if (isCertificateError(error) || isAuthError(error)) {
+                account.accessToken = refreshed.accessToken
+                account.expiresAt = Date.now() + refreshed.expiresIn * 1000
+                authStore.saveAccount(account)
+                return fetchAntigravityModelsForAccount(account, true)
+            } catch (refreshError) {
+                if (isCertificateError(refreshError) || isAuthError(refreshError)) {
                     return {}
                 }
-                throw error
+                throw refreshError
             }
         }
 
-        if (response.status === 401) {
+        if (error instanceof UpstreamError && error.status === 401) {
             return {}
         }
 
-        const text = await response.text()
-        throw new Error(`Antigravity quota error ${response.status}: ${text}`)
-    }
-
-    const data = await response.json() as { models?: Record<string, { quotaInfo?: ModelInfo }> }
-    const models: Record<string, ModelInfo> = {}
-    for (const [name, info] of Object.entries(data.models || {})) {
-        models[name] = {
-            remainingFraction: info.quotaInfo?.remainingFraction ?? 0,
-            resetTime: info.quotaInfo?.resetTime,
-        }
-    }
-    return models
-}
-
-async function fetchProjectId(accessToken: string): Promise<string | null> {
-    try {
-        const response = await fetch(`${CLOUD_CODE_BASE_URL}/v1internal:loadCodeAssist`, {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Content-Type": "application/json",
-                "User-Agent": USER_AGENT,
-            },
-            body: JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } }),
-        })
-        if (!response.ok) {
-            return null
-        }
-        const data = await response.json() as { cloudaicompanionProject?: string }
-        return data.cloudaicompanionProject || null
-    } catch {
-        return null
+        throw error
     }
 }
 

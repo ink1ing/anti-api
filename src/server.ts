@@ -4,9 +4,9 @@
 
 import { Hono } from "hono"
 import { cors } from "hono/cors"
-import { logger } from "hono/logger"
 import { readFileSync } from "fs"
 import { join } from "path"
+import consola from "consola"
 
 import { messageRoutes } from "./routes/messages/route"
 import { openaiRoutes } from "./routes/openai/route"
@@ -17,12 +17,16 @@ import { AVAILABLE_MODELS } from "./lib/config"
 import { getAggregatedQuota } from "./services/quota-aggregator"
 import { initAuth, isAuthenticated } from "./services/antigravity/login"
 import { accountManager } from "./services/antigravity/account-manager"
-import consola from "consola"
-
 export const server = new Hono()
 
+consola.level = 0
+
 // 中间件
-server.use(logger())
+server.use(async (c, next) => {
+    await next()
+    const reason = c.res.headers.get("X-Log-Reason") || (c.res.status < 400 ? "ok" : "error")
+    console.log(`${c.res.status} ${reason}`)
+})
 server.use(cors())
 
 // 启动时自动加载已保存的认证
@@ -119,6 +123,16 @@ server.get("/quota/json", async (c) => {
     } catch (error) {
         return c.json({ error: "Failed to fetch quota" }, 500)
     }
+})
+
+// 删除账号 - API
+server.delete("/accounts/:id", async (c) => {
+    const accountId = c.req.param("id")
+    const success = accountManager.removeAccount(accountId)
+    if (success) {
+        return c.json({ success: true, message: `Account ${accountId} removed` })
+    }
+    return c.json({ success: false, error: "Account not found" }, 404)
 })
 
 // 隧道状态 - 返回公共 URL

@@ -64,7 +64,7 @@ const start = defineCommand({
         if (args.verbose) {
             consola.level = 4 // debug
         } else {
-            consola.level = 3 // info
+            consola.level = 0 // silent
         }
 
         // 尝试加载已保存的 OAuth 认证
@@ -108,28 +108,36 @@ const start = defineCommand({
             idleTimeout: 120,  // 2分钟超时，适应慢速 API 响应
         })
 
-        consola.success(`端口: http://localhost:${state.port}`)
-        consola.success(`面板: http://localhost:${state.port}/quota`)
+        if (args.verbose) {
+            consola.success(`端口: http://localhost:${state.port}`)
+            consola.success(`面板: http://localhost:${state.port}/quota`)
+        }
 
         // 如果未登录，自动弹出登录窗口
         if (!isAuthenticated()) {
-            consola.info("未检测到登录状态，正在打开浏览器进行 OAuth 登录...")
+            if (args.verbose) {
+                consola.info("未检测到登录状态，正在打开浏览器进行 OAuth 登录...")
+            }
             const result = await startOAuthLogin()
             if (result.success) {
-                consola.success(`登录成功: ${result.email}`)
+                if (args.verbose) {
+                    consola.success(`登录成功: ${result.email}`)
+                }
                 // 登录成功后打开面板
                 openBrowser(`http://localhost:${state.port}/quota`)
             } else {
-                consola.error(`登录失败: ${result.error}`)
-                consola.info("你可以稍后运行 'bun run src/main.ts login' 重新登录")
+                if (args.verbose) {
+                    consola.error(`登录失败: ${result.error}`)
+                    consola.info("你可以稍后运行 'bun run src/main.ts login' 重新登录")
+                }
             }
         } else {
-            consola.success(`已登录: ${state.userEmail}`)
+            if (args.verbose) {
+                consola.success(`已登录: ${state.userEmail}`)
+            }
             // 已登录时自动打开面板
             openBrowser(`http://localhost:${state.port}/quota`)
         }
-
-        console.log("================================")
     },
 })
 
@@ -142,7 +150,6 @@ const addAccount = defineCommand({
     async run() {
         consola.info("正在添加新账号...")
         consola.info("提示: 添加多个账号可以在配额耗尽时自动轮换，避免 429 错误")
-        console.log("")
 
         // 加载现有账号
         accountManager.load()
@@ -150,7 +157,6 @@ const addAccount = defineCommand({
         if (existingEmails.length > 0) {
             consola.info(`当前已有 ${existingEmails.length} 个账号:`)
             existingEmails.forEach((email, i) => consola.info(`  ${i + 1}. ${email}`))
-            console.log("")
         }
 
         // 开始 OAuth 登录
@@ -222,7 +228,7 @@ const remote = defineCommand({
 
         state.port = parseInt(args.port, 10)
         state.verbose = true
-        consola.level = 3
+        consola.level = 0
 
         // 初始化认证
         initAuth()
@@ -270,7 +276,6 @@ const remote = defineCommand({
         }
 
         if (tunnelUrl) {
-            console.log("")
             consola.box({
                 title: "🌍 Anti-API 公共端点已就绪",
                 message: `

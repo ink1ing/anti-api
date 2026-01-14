@@ -11,6 +11,7 @@ import { type ClaudeMessage, type ClaudeTool } from "~/lib/translator"
 import { rateLimiter } from "~/lib/rate-limiter"
 import { determineRetryStrategy, applyRetryDelay } from "~/lib/retry"
 import { UpstreamError } from "~/lib/error"
+import { cleanJsonSchemaForGemini } from "~/lib/json-schema-cleaner"
 
 accountManager.load()
 
@@ -120,7 +121,7 @@ function normalizeToolParameters(schema: unknown): any {
         return { type: "object", properties: {} }
     }
 
-    normalized = cleanJsonSchema(normalized)
+    normalized = cleanJsonSchemaForGemini(normalized)
     if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
         return { type: "object", properties: {} }
     }
@@ -149,9 +150,17 @@ function buildSafetySettings(): any[] {
 }
 
 function buildSystemInstruction(): any {
+    const antigravityIdentity = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.
+You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
+**Absolute paths only**
+**Proactiveness**`
+
     return {
         role: "user",
-        parts: [{ text: "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team." }]
+        parts: [
+            { text: antigravityIdentity },
+            { text: "\n--- [SYSTEM_PROMPT_END] ---" }
+        ]
     }
 }
 
@@ -171,6 +180,7 @@ function claudeToAntigravity(model: string, messages: ClaudeMessage[], tools?: C
         systemInstruction: buildSystemInstruction(),
         generationConfig: {
             maxOutputTokens: 64000,
+            stopSequences: ["\n\nHuman:", "[DONE]"],
         },
     }
 
@@ -262,68 +272,62 @@ async function sendRequestSse(
     let currentAccountId = accountId
 
     for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
-        const releaseLock = await rateLimiter.acquireExclusive()
-        try {
-            for (const baseUrl of ANTIGRAVITY_BASE_URLS) {
-                const url = baseUrl + endpoint + "?alt=sse"
-                consola.debug("[SSE] Trying:", url)
-                try {
-                    const response = await fetch(url, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            "Authorization": "Bearer " + currentAccessToken,
-                            "User-Agent": DEFAULT_USER_AGENT,
-                            "Accept": "text/event-stream",
-                        },
-                        body: JSON.stringify(antigravityRequest),
-                    })
+        // 锁已在 handler.ts HTTP 层获取，这里不需要
+        for (const baseUrl of ANTIGRAVITY_BASE_URLS) {
+            const url = baseUrl + endpoint + "?alt=sse"
+            consola.debug("[SSE] Trying:", url)
+            try {
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + currentAccessToken,
+                        "User-Agent": DEFAULT_USER_AGENT,
+                        "Accept": "text/event-stream",
+                    },
+                    body: JSON.stringify(antigravityRequest),
+                })
 
-                    if (response.ok) {
-                        consola.success("SSE API successful on:", baseUrl)
-                        if (currentAccountId) accountManager.markSuccess(currentAccountId)
-                        releaseLock()
-                        return await response.text()
-                    }
+                if (response.ok) {
+                    consola.success("SSE API successful on:", baseUrl)
+                    if (currentAccountId) accountManager.markSuccess(currentAccountId)
+                    return await response.text()
+                }
 
-                    lastStatusCode = response.status
-                    lastRetryAfterHeader = response.headers.get("retry-after") || undefined
-                    lastErrorText = await response.text()
-                    consola.warn("SSE error " + response.status, lastErrorText.substring(0, 200))
+                lastStatusCode = response.status
+                lastRetryAfterHeader = response.headers.get("retry-after") || undefined
+                lastErrorText = await response.text()
+                consola.warn("SSE error " + response.status, lastErrorText.substring(0, 200))
 
-                    if (lastStatusCode === 429 && currentAccountId) {
-                        accountManager.markRateLimitedFromError(
-                            currentAccountId,
-                            lastStatusCode,
-                            lastErrorText,
-                            lastRetryAfterHeader
-                        )
-                        if (allowRotation && accountManager.count() > 1) {
-                            const next = await accountManager.getNextAvailableAccount(true)
-                            if (next && next.accountId !== currentAccountId) {
-                                currentAccessToken = next.accessToken
-                                currentAccountId = next.accountId
-                                antigravityRequest.project = next.projectId
-                                continue
-                            }
+                if (lastStatusCode === 429 && currentAccountId) {
+                    accountManager.markRateLimitedFromError(
+                        currentAccountId,
+                        lastStatusCode,
+                        lastErrorText,
+                        lastRetryAfterHeader
+                    )
+                    if (allowRotation && accountManager.count() > 1) {
+                        const next = await accountManager.getNextAvailableAccount(true)
+                        if (next && next.accountId !== currentAccountId) {
+                            currentAccessToken = next.accessToken
+                            currentAccountId = next.accountId
+                            antigravityRequest.project = next.projectId
+                            continue
                         }
                     }
+                }
 
-                    if (shouldTryNextEndpoint(lastStatusCode)) {
-                        lastError = new Error("SSE API error: " + response.status)
-                        continue
-                    }
-
-                    releaseLock()
-                    throw new UpstreamError("antigravity", response.status, lastErrorText, lastRetryAfterHeader)
-                } catch (e) {
-                    if (e instanceof UpstreamError) throw e
-                    lastError = e as Error
+                if (shouldTryNextEndpoint(lastStatusCode)) {
+                    lastError = new Error("SSE API error: " + response.status)
                     continue
                 }
+
+                throw new UpstreamError("antigravity", response.status, lastErrorText, lastRetryAfterHeader)
+            } catch (e) {
+                if (e instanceof UpstreamError) throw e
+                lastError = e as Error
+                continue
             }
-        } finally {
-            releaseLock()
         }
 
         if (lastStatusCode > 0) {
@@ -341,14 +345,26 @@ async function sendRequestSse(
 
 function collectSseChunks(rawSse: string): any[] {
     const chunks: any[] = []
-    for (const event of rawSse.split("\n\n")) {
-        if (!event.trim()) continue
-        const lines = event.split("\n").filter(l => l.startsWith("data: ")).map(l => l.slice(6))
-        if (lines.length === 0) continue
-        const data = lines.join("\n").trim()
-        if (!data) continue
-        try { chunks.push(JSON.parse(data)) } catch { }
+
+    // 🔧 更健壮的解析：按行处理，直接找 data: 开头的行
+    const lines = rawSse.split(/\r?\n/)
+
+    for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith("data: ")) continue
+
+        const jsonStr = trimmed.slice(6).trim()
+        if (!jsonStr || jsonStr === "[DONE]") continue
+
+        try {
+            const parsed = JSON.parse(jsonStr)
+            chunks.push(parsed)
+        } catch (e) {
+            // 忽略解析失败的行
+            consola.debug(`[SSE] Failed to parse line: ${jsonStr.substring(0, 100)}`)
+        }
     }
+
     return chunks
 }
 
@@ -454,12 +470,25 @@ export async function* createChatCompletionStreamWithOptions(
         accountId,
         options.allowRotation ?? true
     )
+
+    // 🔍 Debug: log raw response length and first 200 chars
+    consola.debug(`[Stream] Raw response length: ${rawResponse.length}, preview: ${rawResponse.substring(0, 200)}`)
+
     const chunks = collectSseChunks(rawResponse)
+
+    // 🔍 Debug: log chunks count
+    consola.debug(`[Stream] Parsed ${chunks.length} chunks from SSE response`)
+
+    if (chunks.length === 0) {
+        consola.warn(`[Stream] No chunks parsed from response. Raw response: ${rawResponse.substring(0, 500)}`)
+        throw new Error("Empty SSE response - no chunks parsed")
+    }
 
     let hasFirstResponse = false
     let blockIndex = 0
     let hasToolUse = false
     let outputTokens = 0
+    let textBlockStarted = false  // 🔧 跟踪文本块是否已开始
 
     for (const chunk of chunks) {
         const parts = chunk.response?.candidates?.[0]?.content?.parts || []
@@ -484,13 +513,23 @@ export async function* createChatCompletionStreamWithOptions(
 
         for (const part of parts) {
             if (part.text) {
-                yield "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":" + blockIndex + ",\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+                // 🔧 只在第一次遇到文本时发送 block_start
+                if (!textBlockStarted) {
+                    yield "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":" + blockIndex + ",\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+                    textBlockStarted = true
+                }
+                // 每个 text chunk 只发送 delta
                 const textDelta = { type: "content_block_delta", index: blockIndex, delta: { type: "text_delta", text: part.text } }
                 yield "event: content_block_delta\ndata: " + JSON.stringify(textDelta) + "\n\n"
-                yield "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":" + blockIndex + "}\n\n"
-                blockIndex++
             }
             if (part.functionCall) {
+                // 先关闭文本块（如果有）
+                if (textBlockStarted) {
+                    yield "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":" + blockIndex + "}\n\n"
+                    blockIndex++
+                    textBlockStarted = false
+                }
+
                 hasToolUse = true
                 const toolStart = { type: "content_block_start", index: blockIndex, content_block: { type: "tool_use", id: part.functionCall.id || "toolu_" + Date.now(), name: part.functionCall.name, input: {} } }
                 yield "event: content_block_start\ndata: " + JSON.stringify(toolStart) + "\n\n"
@@ -505,6 +544,11 @@ export async function* createChatCompletionStreamWithOptions(
 
         const usage = chunk.response?.usageMetadata
         if (usage) outputTokens = (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0)
+    }
+
+    // 🔧 关闭最后的文本块（如果有）
+    if (textBlockStarted) {
+        yield "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":" + blockIndex + "}\n\n"
     }
 
     const stopReason = hasToolUse ? "tool_use" : "end_turn"

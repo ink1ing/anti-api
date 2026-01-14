@@ -4,7 +4,6 @@
 
 import type { Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
-import consola from "consola"
 
 export class HTTPError extends Error {
     response: Response
@@ -39,12 +38,37 @@ export class UpstreamError extends Error {
     }
 }
 
+function buildLogReason(error: unknown): string {
+    if (error instanceof UpstreamError) {
+        const body = (error.body || "").toLowerCase()
+        if (error.status === 429) {
+            if (body.includes("resource_exhausted") || body.includes("quota")) {
+                return "quota exhausted"
+            }
+            return "rate limited"
+        }
+        if (error.status === 401) return "unauthorized"
+        if (error.status === 403) return "forbidden"
+        if (error.status === 404) return "not found"
+        if (error.status >= 500) return "upstream error"
+        return "upstream error"
+    }
+
+    if (error instanceof HTTPError) {
+        return "http error"
+    }
+
+    if (error instanceof AntigravityError) {
+        return error.code || "antigravity error"
+    }
+
+    return "internal error"
+}
+
 /**
  * 转发错误到客户端
  */
 export async function forwardError(c: Context, error: unknown) {
-    consola.error("Error occurred:", error)
-
     if (error instanceof HTTPError) {
         const errorText = await error.response.text()
         let errorJson: unknown
@@ -53,7 +77,7 @@ export async function forwardError(c: Context, error: unknown) {
         } catch {
             errorJson = errorText
         }
-        consola.error("HTTP error:", errorJson)
+        c.header("X-Log-Reason", buildLogReason(error))
         return c.json(
             {
                 error: {
@@ -66,6 +90,7 @@ export async function forwardError(c: Context, error: unknown) {
     }
 
     if (error instanceof AntigravityError) {
+        c.header("X-Log-Reason", buildLogReason(error))
         return c.json(
             {
                 error: {
@@ -78,6 +103,7 @@ export async function forwardError(c: Context, error: unknown) {
     }
 
     if (error instanceof UpstreamError) {
+        c.header("X-Log-Reason", buildLogReason(error))
         return c.json(
             {
                 error: {
@@ -90,6 +116,7 @@ export async function forwardError(c: Context, error: unknown) {
         )
     }
 
+    c.header("X-Log-Reason", buildLogReason(error))
     return c.json(
         {
             error: {

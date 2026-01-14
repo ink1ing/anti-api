@@ -16,6 +16,7 @@ import {
     getProjectID,
     refreshAccessToken,
 } from "./oauth"
+import { generateMockProjectId } from "./project-id"
 
 const AUTH_FILE = join(process.cwd(), "data", "auth.json")
 
@@ -190,6 +191,10 @@ export async function startOAuthLogin(): Promise<{ success: boolean; error?: str
         // 9. 获取 Project ID
         consola.info("Fetching project ID...")
         const projectId = await getProjectID(tokens.accessToken)
+        const resolvedProjectId = projectId || generateMockProjectId()
+        if (!projectId) {
+            consola.warn(`No project ID returned, using fallback: ${resolvedProjectId}`)
+        }
 
         // 10. 保存认证信息
         state.accessToken = tokens.accessToken
@@ -198,14 +203,12 @@ export async function startOAuthLogin(): Promise<{ success: boolean; error?: str
         state.tokenExpiresAt = Date.now() + tokens.expiresIn * 1000
         state.userEmail = userInfo.email
         state.userName = userInfo.email.split("@")[0]
-        state.cloudaicompanionProject = projectId || null
+        state.cloudaicompanionProject = resolvedProjectId
 
         saveAuth()
 
         consola.success(`✓ Login successful: ${userInfo.email}`)
-        if (projectId) {
-            consola.success(`✓ Project ID: ${projectId}`)
-        }
+        consola.success(`✓ Project ID: ${resolvedProjectId}`)
 
         return { success: true, email: userInfo.email }
     } catch (error) {

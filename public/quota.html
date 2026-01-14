@@ -500,6 +500,26 @@
             showToast(`Copied: ${modelId}`);
         }
 
+        async function deleteAccount(accountId, displayName) {
+            if (!confirm(`Remove account "${displayName}"?`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/accounts/${encodeURIComponent(accountId)}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast(`Removed: ${displayName}`);
+                    fetchQuota(false);
+                } else {
+                    showToast(`Failed: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`);
+            }
+        }
+
         function renderAccountCard(account) {
             const provider = account.provider || 'antigravity';
             const bars = account.bars || [];
@@ -527,7 +547,11 @@
                     <div class="card-inner rounded-2xl p-5">
                         <div class="flex items-center justify-between mb-4">
                             <div class="text-sm font-bold text-gray-200">${account.displayName || account.accountId}</div>
-                            <span class="text-[10px] text-gray-500 uppercase tracking-[0.2em]">${provider}</span>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] text-gray-500 uppercase tracking-[0.2em]">${provider}</span>
+                                <button onclick="deleteAccount('${account.accountId}', '${account.displayName || account.accountId}')" 
+                                        class="text-gray-600 hover:text-red-500 transition-colors text-xs px-1" title="Remove account">✕</button>
+                            </div>
                         </div>
                         <div class="space-y-4">${barHtml}</div>
                     </div>
@@ -855,10 +879,10 @@
         refreshAll(false);
         init3DEffect();
 
-        // Auto refresh every 60 seconds
+        // Auto refresh every 10 minutes
         setInterval(() => {
             refreshAll(false);
-        }, 60000);
+        }, 600000);
 
         async function refreshAll(showToastMsg = false) {
             await Promise.all([
