@@ -23,6 +23,7 @@ import { importCodexAuthSources } from "./services/codex/oauth"
 import { loadSettings, saveSettings } from "./services/settings"
 import { pingAccount } from "./services/ping"
 import { summarizeUpstreamError, UpstreamError } from "./lib/error"
+import { authStore } from "./services/auth/store"
 
 import { getRequestLogContext } from "./lib/logger"
 import { initLogCapture, setLogCaptureEnabled } from "./lib/log-buffer"
@@ -260,9 +261,24 @@ server.post("/accounts/ping", async (c) => {
 // 删除账号 - API（同时清理 routing 配置）
 server.delete("/accounts/:id", async (c) => {
     const accountId = c.req.param("id")
-    const success = accountManager.removeAccount(accountId)
+
+    // 先尝试从 accountManager 删除 (antigravity 内存管理)
+    let success = accountManager.removeAccount(accountId)
+
+    // 如果 accountManager 找不到，尝试直接从 authStore 删除
+    // 这覆盖了 token 过期或通过其他方式添加的账号
+    if (!success) {
+        // 尝试所有 provider 类型
+        for (const provider of ["antigravity", "codex", "copilot"] as const) {
+            if (authStore.deleteAccount(provider, accountId)) {
+                success = true
+                break
+            }
+        }
+    }
+
     if (success) {
-        // 🆕 同时清理 routing 配置中的该账号
+        // 同时清理 routing 配置中的该账号
         try {
             const { loadRoutingConfig, saveRoutingConfig } = require("./services/routing/config")
             const config = loadRoutingConfig()
