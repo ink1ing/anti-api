@@ -1,11 +1,9 @@
-ARG BUN_IMAGE=ghcr.io/oven-sh/bun:1.1.38
+ARG BUN_IMAGE=oven/bun:1.1.38-alpine
 FROM ${BUN_IMAGE}
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache python3 make g++ curl ca-certificates
 
 COPY package.json bun.lock ./
 RUN bun install --production --frozen-lockfile

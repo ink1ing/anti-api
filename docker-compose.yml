@@ -6,7 +6,7 @@ services:
     # build:
     #   context: .
     #   args:
-    #     BUN_IMAGE: ${BUN_IMAGE:-ghcr.io/oven-sh/bun:1.1.38}
+    #     BUN_IMAGE: ${BUN_IMAGE:-oven/bun:1.1.38-alpine}
     ports:
       - "8964:8964"      # Main API server port
       - "51121:51121"    # Antigravity discovery port
