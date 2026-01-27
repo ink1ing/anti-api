@@ -47,18 +47,6 @@ export function generateAuthURL(redirectUri: string, state: string): string {
         prompt: "consent",
         state,
     })
-
-    // 如果 redirect_uri 使用私有 IP，需要添加 device_id 和 device_name
-    // 参考: https://developers.google.com/identity/protocols/oauth2/native-app
-    const url = new URL(redirectUri)
-    const isPrivateIP = /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(url.hostname)
-    if (isPrivateIP || (url.hostname !== "localhost" && url.hostname !== "127.0.0.1")) {
-        // 生成设备标识
-        const deviceId = crypto.randomUUID()
-        params.set("device_id", deviceId)
-        params.set("device_name", "Anti-API Docker")
-    }
-
     return `${OAUTH_CONFIG.authUrl}?${params.toString()}`
 }
 
