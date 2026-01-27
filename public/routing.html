@@ -1122,7 +1122,8 @@
                     card.appendChild(header);
 
                     const modelGrid = document.createElement('div');
-                    modelGrid.className = 'flex flex-wrap gap-1.5 overflow-hidden transition-all duration-200';
+                    modelGrid.className = 'grid gap-1.5 overflow-hidden transition-all duration-200';
+                    modelGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(90px, 1fr))';
                     modelGrid.style.maxHeight = isCollapsed ? '0px' : '2000px';
                     modelGrid.style.opacity = isCollapsed ? '0' : '1';
                     modelGrid.style.paddingTop = isCollapsed ? '0' : '8px';
@@ -1139,7 +1140,7 @@
 
                     providerModels.forEach(model => {
                         const node = document.createElement('div');
-                        node.className = 'node flow-node rounded-lg px-2 py-1.5 text-[10px] cursor-grab relative overflow-hidden whitespace-nowrap';
+                        node.className = 'node flow-node rounded-lg px-1.5 py-1.5 text-[10px] cursor-grab relative overflow-hidden text-center';
                         node.draggable = true;
                         node.dataset.provider = provider;
                         node.dataset.accountId = account.id;
@@ -1163,25 +1164,28 @@
 
                         // Shorten model label for compact display
                         const shortLabel = model.label
-                            .replace('Gemini 3 Pro Image ', 'Image ')
-                            .replace('Gemini 3 Pro ', 'G3Pro ')
+                            .replace('Gemini 3 Pro Image ', 'Img ')
+                            .replace('Gemini 3 Pro ', 'G3P ')
                             .replace('Gemini 3 Flash', 'G3Flash')
                             .replace('Gemini 2.5 Flash ', 'G2.5F ')
                             .replace('Gemini 2.5 Pro', 'G2.5Pro')
-                            .replace('Gemini 2.0 Flash ', 'G2.0F ')
-                            .replace('Claude Opus 4.5 ', 'Opus4.5 ')
-                            .replace('Claude Sonnet 4.5 ', 'Sonnet4.5 ')
-                            .replace('Claude Haiku 4.5 ', 'Haiku4.5 ')
-                            .replace('Claude Opus 4 ', 'Opus4 ')
-                            .replace('Claude Sonnet 4 ', 'Sonnet4 ')
+                            .replace('Gemini 2.0 Flash ', 'G2F ')
+                            .replace('Claude Opus 4.5 ', 'Op4.5 ')
+                            .replace('Claude Sonnet 4.5 ', 'So4.5 ')
+                            .replace('Claude Haiku 4.5 ', 'Ha4.5 ')
+                            .replace('Claude Opus 4 ', 'Op4 ')
+                            .replace('Claude Sonnet 4 ', 'So4 ')
+                            .replace('GPT-OSS 120B (Medium)', 'OSS-120B')
                             .replace('(Thinking)', 'T')
+                            .replace('(Experimental)', 'Exp')
                             .replace('(High)', 'H')
-                            .replace('(Low)', 'L');
+                            .replace('(Low)', 'L')
+                            .replace(' Lite', 'L');
 
                         node.innerHTML = `
-                            <div class="flex items-center gap-1 relative z-10">
-                                <span>${shortLabel}</span>
-                                ${modelQuota !== null ? `<span class="text-cyan-400/70">${modelQuota}%</span>` : ''}
+                            <div class="relative z-10 leading-tight">
+                                <div class="truncate">${shortLabel}</div>
+                                ${modelQuota !== null ? `<div class="text-cyan-400/70 text-[9px]">${modelQuota}%</div>` : ''}
                             </div>
                         `;
                         node.title = model.label; // Full name on hover
