@@ -582,10 +582,11 @@ class AccountManager {
             // ✅ 修复：传入正确的 provider 参数
             const quotaPercent = getAccountModelQuotaPercent("antigravity", accountId, modelId)
 
-            // 如果获取配额失败（返回 null），打印警告并假设有配额（避免阻止请求）
+            // 如果获取配额失败（返回 null），说明缓存为空或未刷新
             if (quotaPercent === null) {
-                consola.warn(`Failed to get quota for account ${account.email}, model ${modelId}, assuming quota available`)
-                return true
+                consola.warn(`⚠️  No quota cache for ${account.email}, model ${modelId}. Please refresh quota in Dashboard!`)
+                // 🔴 改为保守策略：假设无配额，跳过该账号
+                return false
             }
 
             // 打印调试信息（使用 console.log 确保输出）
