@@ -554,6 +554,9 @@ class AccountManager {
         email: string
         accountId: string
     } | null> {
+        // 🆕 入口日志：确保一定输出
+        console.log(`[AccountManager] getNextAvailableAccount called: forceRotate=${forceRotate}, modelId=${modelId || 'undefined'}`)
+
         this.ensureLoaded()
         if (this.accounts.size === 0) {
             this.hydrateFromAuthStore()
@@ -563,19 +566,30 @@ class AccountManager {
         const now = Date.now()
 
         if (this.accounts.size === 0) {
+            console.log(`[AccountManager] ❌ No accounts available`)
             return null
         }
+
+        console.log(`[AccountManager] Total accounts: ${this.accounts.size}, Queue: ${this.accountQueue.length}`)
 
         // 🆕 读取配额保留设置
         const { getSetting } = await import("~/services/settings")
         const reservePercent = getSetting("quotaReservePercent") || 0
 
+        console.log(`[AccountManager] Quota reserve setting: ${reservePercent}%`)
+
         // 🆕 检查账号是否有足够的配额（支持所有模型类型 + 配额保留）
         const hasModelQuota = async (accountId: string): Promise<boolean> => {
-            if (!modelId) return true // 没有指定模型，不检查配额
+            if (!modelId) {
+                console.log(`[AccountManager] Skipping quota check (no modelId specified)`)
+                return true // 没有指定模型，不检查配额
+            }
 
             const account = this.accounts.get(accountId)
-            if (!account) return false
+            if (!account) {
+                console.log(`[AccountManager] ❌ Account ${accountId} not found`)
+                return false
+            }
 
             const { getAccountModelQuotaPercent } = await import("~/services/quota-aggregator")
 
@@ -593,7 +607,11 @@ class AccountManager {
             console.log(`[Account] ${account.email}: ${modelId} quota = ${quotaPercent}%, reserve = ${reservePercent}%`)
 
             // 配额必须高于保留阈值
-            return quotaPercent > reservePercent
+            const hasQuota = quotaPercent > reservePercent
+            if (!hasQuota) {
+                console.log(`[Account] ${account.email}: ${quotaPercent}% <= ${reservePercent}% (reserve), insufficient quota`)
+            }
+            return hasQuota
         }
 
         // 🆕 是否存在空闲账号（避免选中正在处理的账号）
