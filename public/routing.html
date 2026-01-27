@@ -552,6 +552,20 @@
 
     <script>
         const API_BASE = `${window.location.protocol}//${window.location.hostname}:8964`;
+
+        // 兼容 HTTP 环境的 UUID 生成函数（crypto.randomUUID 只在 HTTPS 下可用）
+        function generateUUID() {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return generateUUID();
+            }
+            // Fallback for HTTP context
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
         const STORAGE_KEYS = {
             activeFlow: 'anti-api-active-flow',
             privacyMode: 'anti-api-privacy-mode',
@@ -707,7 +721,7 @@
         function ensureAccountRoute(modelId) {
             let route = getAccountRoute(modelId);
             if (!route) {
-                route = { id: crypto.randomUUID(), modelId, entries: [] };
+                route = { id: generateUUID(), modelId, entries: [] };
                 accountRouting.routes.push(route);
             }
             return route;
@@ -874,7 +888,7 @@
                 ? 'Auto (Smart Switch)'
                 : (accounts[provider] || []).find(acc => acc.id === accountId)?.displayName;
             route.entries.push({
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 provider,
                 accountId,
                 accountLabel: displayName,
@@ -1218,7 +1232,7 @@
 
         function createEntryFromPayload(payload) {
             return {
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 provider: payload.provider,
                 accountId: payload.accountId,
                 modelId: payload.modelId,
@@ -1322,7 +1336,7 @@
                 return;
             }
 
-            const flowId = activeFlowId || crypto.randomUUID();
+            const flowId = activeFlowId || generateUUID();
             const flow = { id: flowId, name: flowName, entries: flowEntries };
             const index = flows.findIndex(existing => existing.id === flowId);
 
