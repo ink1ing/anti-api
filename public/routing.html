@@ -1122,22 +1122,24 @@
                     card.appendChild(header);
 
                     const modelGrid = document.createElement('div');
-                    modelGrid.className = 'grid grid-cols-1 gap-2 overflow-hidden transition-all duration-200';
-                    modelGrid.style.maxHeight = isCollapsed ? '0px' : '1000px';
+                    modelGrid.className = 'flex flex-wrap gap-1.5 overflow-hidden transition-all duration-200';
+                    modelGrid.style.maxHeight = isCollapsed ? '0px' : '2000px';
                     modelGrid.style.opacity = isCollapsed ? '0' : '1';
+                    modelGrid.style.paddingTop = isCollapsed ? '0' : '8px';
 
                     // Toggle collapse on header click
                     header.addEventListener('click', () => {
                         const nowCollapsed = modelGrid.style.maxHeight !== '0px';
-                        modelGrid.style.maxHeight = nowCollapsed ? '0px' : '1000px';
+                        modelGrid.style.maxHeight = nowCollapsed ? '0px' : '2000px';
                         modelGrid.style.opacity = nowCollapsed ? '0' : '1';
+                        modelGrid.style.paddingTop = nowCollapsed ? '0' : '8px';
                         header.querySelector('[data-toggle-icon]').classList.toggle('rotate-90', !nowCollapsed);
                         localStorage.setItem(collapseKey, nowCollapsed ? 'true' : 'false');
                     });
 
                     providerModels.forEach(model => {
                         const node = document.createElement('div');
-                        node.className = 'node flow-node rounded-xl px-3 py-2 text-xs cursor-grab relative overflow-hidden';
+                        node.className = 'node flow-node rounded-lg px-2 py-1.5 text-[10px] cursor-grab relative overflow-hidden whitespace-nowrap';
                         node.draggable = true;
                         node.dataset.provider = provider;
                         node.dataset.accountId = account.id;
@@ -1151,20 +1153,38 @@
 
                         // Combine flow gradient with battery fill effect
                         if (modelQuota !== null) {
-                            node.style.backgroundImage = `linear-gradient(90deg, 
-                                rgba(110, 231, 255, 0.22) 0%, 
-                                rgba(110, 231, 255, 0.16) ${modelQuota}%, 
+                            node.style.backgroundImage = `linear-gradient(90deg,
+                                rgba(110, 231, 255, 0.22) 0%,
+                                rgba(110, 231, 255, 0.16) ${modelQuota}%,
                                 rgba(10, 10, 10, 0.95) ${modelQuota}%), ${baseGradient}`;
                         } else {
                             node.style.backgroundImage = baseGradient;
                         }
 
+                        // Shorten model label for compact display
+                        const shortLabel = model.label
+                            .replace('Gemini 3 Pro Image ', 'Image ')
+                            .replace('Gemini 3 Pro ', 'G3Pro ')
+                            .replace('Gemini 3 Flash', 'G3Flash')
+                            .replace('Gemini 2.5 Flash ', 'G2.5F ')
+                            .replace('Gemini 2.5 Pro', 'G2.5Pro')
+                            .replace('Gemini 2.0 Flash ', 'G2.0F ')
+                            .replace('Claude Opus 4.5 ', 'Opus4.5 ')
+                            .replace('Claude Sonnet 4.5 ', 'Sonnet4.5 ')
+                            .replace('Claude Haiku 4.5 ', 'Haiku4.5 ')
+                            .replace('Claude Opus 4 ', 'Opus4 ')
+                            .replace('Claude Sonnet 4 ', 'Sonnet4 ')
+                            .replace('(Thinking)', 'T')
+                            .replace('(High)', 'H')
+                            .replace('(Low)', 'L');
+
                         node.innerHTML = `
-                            <div class="flex items-center justify-between relative z-10">
-                                <span>${model.label}</span>
-                                ${modelQuota !== null ? `<span class="text-[10px] text-cyan-400/80">${modelQuota}%</span>` : ''}
+                            <div class="flex items-center gap-1 relative z-10">
+                                <span>${shortLabel}</span>
+                                ${modelQuota !== null ? `<span class="text-cyan-400/70">${modelQuota}%</span>` : ''}
                             </div>
                         `;
+                        node.title = model.label; // Full name on hover
                         node.addEventListener('dragstart', onDragStart);
                         modelGrid.appendChild(node);
                     });

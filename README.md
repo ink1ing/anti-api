@@ -268,7 +268,19 @@ Configure application behavior at `http://localhost:8964/settings`:
 | `gemini-3-pro-low` | Cost-effective |
 | `gemini-3-pro` | Balanced |
 | `gemini-3-flash` | Fastest responses |
-| `gemini-3-pro-image` | Image generation (supports -2k, -4k, -1x1, -16x9, etc.) |
+| `gemini-3-pro-image` | Image generation (supports resolution and aspect ratio suffixes) |
+
+**Image Generation Model Variants (21 combinations):**
+| Base | 2K Resolution | 4K Resolution |
+|------|---------------|---------------|
+| `gemini-3-pro-image` | `gemini-3-pro-image-2k` | `gemini-3-pro-image-4k` |
+| `gemini-3-pro-image-1x1` | `gemini-3-pro-image-2k-1x1` | `gemini-3-pro-image-4k-1x1` |
+| `gemini-3-pro-image-4x3` | `gemini-3-pro-image-2k-4x3` | `gemini-3-pro-image-4k-4x3` |
+| `gemini-3-pro-image-3x4` | `gemini-3-pro-image-2k-3x4` | `gemini-3-pro-image-4k-3x4` |
+| `gemini-3-pro-image-16x9` | `gemini-3-pro-image-2k-16x9` | `gemini-3-pro-image-4k-16x9` |
+| `gemini-3-pro-image-9x16` | `gemini-3-pro-image-2k-9x16` | `gemini-3-pro-image-4k-9x16` |
+| `gemini-3-pro-image-21x9` | `gemini-3-pro-image-2k-21x9` | `gemini-3-pro-image-4k-21x9` |
+
 | **Gemini 2.5 Series** | |
 | `gemini-2.5-pro` | Pro 2.5 |
 | `gemini-2.5-flash` | Flash 2.5 |
@@ -551,7 +563,19 @@ docker compose pull anti-api && docker compose up -d anti-api
 | `gemini-3-pro-low` | 低配额消耗 |
 | `gemini-3-pro` | 均衡版 |
 | `gemini-3-flash` | 最快响应 |
-| `gemini-3-pro-image` | 图像生成 (支持 -2k, -4k, -1x1, -16x9 等后缀) |
+| `gemini-3-pro-image` | 图像生成 (支持分辨率和宽高比后缀) |
+
+**图像生成模型变体 (21种组合):**
+| 基础版 | 2K 分辨率 | 4K 分辨率 |
+|--------|-----------|-----------|
+| `gemini-3-pro-image` | `gemini-3-pro-image-2k` | `gemini-3-pro-image-4k` |
+| `gemini-3-pro-image-1x1` | `gemini-3-pro-image-2k-1x1` | `gemini-3-pro-image-4k-1x1` |
+| `gemini-3-pro-image-4x3` | `gemini-3-pro-image-2k-4x3` | `gemini-3-pro-image-4k-4x3` |
+| `gemini-3-pro-image-3x4` | `gemini-3-pro-image-2k-3x4` | `gemini-3-pro-image-4k-3x4` |
+| `gemini-3-pro-image-16x9` | `gemini-3-pro-image-2k-16x9` | `gemini-3-pro-image-4k-16x9` |
+| `gemini-3-pro-image-9x16` | `gemini-3-pro-image-2k-9x16` | `gemini-3-pro-image-4k-9x16` |
+| `gemini-3-pro-image-21x9` | `gemini-3-pro-image-2k-21x9` | `gemini-3-pro-image-4k-21x9` |
+
 | **Gemini 2.5 系列** | |
 | `gemini-2.5-pro` | Pro 2.5 |
 | `gemini-2.5-flash` | Flash 2.5 |

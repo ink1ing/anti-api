@@ -29,16 +29,31 @@ export const AVAILABLE_MODELS = [
     { id: "gemini-3-pro", name: "Gemini 3 Pro" },
     { id: "gemini-3-flash", name: "Gemini 3 Flash" },
 
-    // Gemini 3 Pro Image 系列 (图像生成)
+    // Gemini 3 Pro Image 系列 (图像生成) - 21个变体
+    // 基础版本
     { id: "gemini-3-pro-image", name: "Gemini 3 Pro Image" },
-    { id: "gemini-3-pro-image-2k", name: "Gemini 3 Pro Image (2K)" },
-    { id: "gemini-3-pro-image-4k", name: "Gemini 3 Pro Image (4K)" },
     { id: "gemini-3-pro-image-1x1", name: "Gemini 3 Pro Image (1:1)" },
     { id: "gemini-3-pro-image-4x3", name: "Gemini 3 Pro Image (4:3)" },
     { id: "gemini-3-pro-image-3x4", name: "Gemini 3 Pro Image (3:4)" },
     { id: "gemini-3-pro-image-16x9", name: "Gemini 3 Pro Image (16:9)" },
     { id: "gemini-3-pro-image-9x16", name: "Gemini 3 Pro Image (9:16)" },
     { id: "gemini-3-pro-image-21x9", name: "Gemini 3 Pro Image (21:9)" },
+    // 2K 分辨率版本
+    { id: "gemini-3-pro-image-2k", name: "Gemini 3 Pro Image 2K" },
+    { id: "gemini-3-pro-image-2k-1x1", name: "Gemini 3 Pro Image 2K (1:1)" },
+    { id: "gemini-3-pro-image-2k-4x3", name: "Gemini 3 Pro Image 2K (4:3)" },
+    { id: "gemini-3-pro-image-2k-3x4", name: "Gemini 3 Pro Image 2K (3:4)" },
+    { id: "gemini-3-pro-image-2k-16x9", name: "Gemini 3 Pro Image 2K (16:9)" },
+    { id: "gemini-3-pro-image-2k-9x16", name: "Gemini 3 Pro Image 2K (9:16)" },
+    { id: "gemini-3-pro-image-2k-21x9", name: "Gemini 3 Pro Image 2K (21:9)" },
+    // 4K 分辨率版本
+    { id: "gemini-3-pro-image-4k", name: "Gemini 3 Pro Image 4K" },
+    { id: "gemini-3-pro-image-4k-1x1", name: "Gemini 3 Pro Image 4K (1:1)" },
+    { id: "gemini-3-pro-image-4k-4x3", name: "Gemini 3 Pro Image 4K (4:3)" },
+    { id: "gemini-3-pro-image-4k-3x4", name: "Gemini 3 Pro Image 4K (3:4)" },
+    { id: "gemini-3-pro-image-4k-16x9", name: "Gemini 3 Pro Image 4K (16:9)" },
+    { id: "gemini-3-pro-image-4k-9x16", name: "Gemini 3 Pro Image 4K (9:16)" },
+    { id: "gemini-3-pro-image-4k-21x9", name: "Gemini 3 Pro Image 4K (21:9)" },
 
     // Gemini 2.5 系列
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
