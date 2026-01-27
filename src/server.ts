@@ -75,6 +75,9 @@ const API_KEY_WHITELIST = [
     "/tunnel/status",
     "/accounts",
     "/usage",
+    "/models",      // 模型列表（无前缀）
+    "/v1/models",   // 模型列表（OpenAI 格式）
+    "/v1beta/models", // 模型列表（Anthropic 格式）
 ]
 
 // API Key 认证中间件

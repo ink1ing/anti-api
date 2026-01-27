@@ -11,6 +11,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
     <style>
+        /* Theme System */
         :root {
             --anti-blue: #4796E3;
             --anti-purple: #6b4da3;
@@ -20,36 +21,158 @@
             --dark-purple: #3b2a54;
             --pure-black: #000000;
             --warm-dark: #262624;
+
+            /* Theme colors (default: midnight) */
+            --theme-bg: #000000;
+            --theme-card-bg: transparent;
+            --theme-card-border: rgba(55, 65, 81, 0.5);
+            --theme-text: #d1d5db;
+            --theme-text-muted: #6b7280;
+            --theme-accent: #22d3ee;
+        }
+
+        /* Theme: Midnight (Default) */
+        [data-theme="midnight"] {
+            --theme-bg: #000000;
+            --theme-card-bg: transparent;
+            --theme-card-border: rgba(55, 65, 81, 0.5);
+            --theme-text: #d1d5db;
+            --theme-text-muted: #6b7280;
+            --theme-accent: #22d3ee;
+        }
+
+        /* Theme: Cyberpunk */
+        [data-theme="cyberpunk"] {
+            --theme-bg: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            --theme-card-bg: rgba(48, 43, 99, 0.4);
+            --theme-card-border: rgba(255, 0, 128, 0.3);
+            --theme-text: #ff00ff;
+            --theme-text-muted: #a855f7;
+            --theme-accent: #ff0080;
+            --anti-blue: #00ffff;
+            --anti-purple: #ff00ff;
+        }
+
+        /* Theme: Ocean */
+        [data-theme="ocean"] {
+            --theme-bg: linear-gradient(180deg, #0a1628 0%, #0d2137 50%, #0f172a 100%);
+            --theme-card-bg: rgba(14, 165, 233, 0.08);
+            --theme-card-border: rgba(14, 165, 233, 0.25);
+            --theme-text: #7dd3fc;
+            --theme-text-muted: #0ea5e9;
+            --theme-accent: #38bdf8;
+            --anti-blue: #0ea5e9;
+            --anti-purple: #6366f1;
+        }
+
+        /* Theme: Forest */
+        [data-theme="forest"] {
+            --theme-bg: linear-gradient(180deg, #052e16 0%, #14532d 50%, #0c1f0f 100%);
+            --theme-card-bg: rgba(34, 197, 94, 0.1);
+            --theme-card-border: rgba(34, 197, 94, 0.3);
+            --theme-text: #86efac;
+            --theme-text-muted: #22c55e;
+            --theme-accent: #4ade80;
+            --anti-blue: #22c55e;
+            --anti-purple: #15803d;
+        }
+
+        /* Theme: Sunset */
+        [data-theme="sunset"] {
+            --theme-bg: linear-gradient(135deg, #1a0a0a 0%, #2d1810 50%, #1f0f05 100%);
+            --theme-card-bg: rgba(251, 146, 60, 0.1);
+            --theme-card-border: rgba(251, 146, 60, 0.3);
+            --theme-text: #fed7aa;
+            --theme-text-muted: #fb923c;
+            --theme-accent: #f97316;
+            --anti-blue: #f97316;
+            --anti-purple: #dc2626;
+            --claude-orange: #fb923c;
+        }
+
+        /* Theme: Aurora */
+        [data-theme="aurora"] {
+            --theme-bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 30%, #134e4a 70%, #1e3a5f 100%);
+            --theme-card-bg: rgba(139, 92, 246, 0.1);
+            --theme-card-border: rgba(139, 92, 246, 0.3);
+            --theme-text: #c4b5fd;
+            --theme-text-muted: #a78bfa;
+            --theme-accent: #8b5cf6;
+            --anti-blue: #06b6d4;
+            --anti-purple: #8b5cf6;
+        }
+
+        /* Theme: Warm */
+        [data-theme="warm"] {
+            --theme-bg: #1c1917;
+            --theme-card-bg: rgba(120, 113, 108, 0.15);
+            --theme-card-border: rgba(168, 162, 158, 0.3);
+            --theme-text: #e7e5e4;
+            --theme-text-muted: #a8a29e;
+            --theme-accent: #fbbf24;
+            --anti-blue: #fbbf24;
+            --anti-purple: #d97706;
         }
 
         body {
-            background: var(--pure-black);
+            background: var(--theme-bg);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
 
-        @media (prefers-color-scheme: light) {
-            body {
-                background: var(--warm-dark);
-            }
+        /* Apply theme text colors */
+        .text-gray-300 { color: var(--theme-text) !important; }
+        .text-gray-400 { color: var(--theme-text-muted) !important; }
+
+        /* Theme selector dropdown */
+        .theme-selector {
+            position: relative;
         }
 
-        @media (prefers-color-scheme: light) {
-            .card-inner {
-                background: rgba(50, 50, 48, 0.9);
-            }
+        .theme-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 0.5rem;
+            background: rgba(17, 17, 17, 0.95);
+            border: 1px solid rgba(55, 65, 81, 0.5);
+            border-radius: 0.75rem;
+            padding: 0.5rem;
+            min-width: 140px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            display: none;
+        }
 
-            .refresh-btn button,
-            .refresh-btn a {
-                background: rgba(50, 50, 48, 0.9);
-            }
+        .theme-dropdown.show {
+            display: block;
+        }
 
-            #copy-toast {
-                background: rgba(50, 50, 48, 0.95);
-            }
+        .theme-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 0.875rem;
+            color: #d1d5db;
+        }
 
-            .bg-gray-900 {
-                background-color: rgba(30, 30, 28, 0.8) !important;
-            }
+        .theme-option:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .theme-option.active {
+            background: rgba(34, 211, 238, 0.2);
+            color: #22d3ee;
+        }
+
+        .theme-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
         }
 
 
@@ -350,11 +473,51 @@
                     Settings
                 </button>
             </div>
-            <!-- Language Toggle -->
-            <button onclick="toggleLanguage()" id="lang-toggle"
-                class="px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500">
-                中文
-            </button>
+            <div class="flex items-center gap-2">
+                <!-- Theme Selector -->
+                <div class="theme-selector">
+                    <button onclick="toggleThemeDropdown()" id="theme-toggle"
+                        class="px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 flex items-center gap-1.5">
+                        <span id="theme-icon">🎨</span>
+                        <span id="theme-name" data-i18n="theme.midnight">Midnight</span>
+                    </button>
+                    <div id="theme-dropdown" class="theme-dropdown">
+                        <div class="theme-option active" data-theme="midnight" onclick="setTheme('midnight')">
+                            <span class="theme-dot" style="background: #000000; border: 1px solid #374151;"></span>
+                            <span data-i18n="theme.midnight">Midnight</span>
+                        </div>
+                        <div class="theme-option" data-theme="cyberpunk" onclick="setTheme('cyberpunk')">
+                            <span class="theme-dot" style="background: linear-gradient(135deg, #ff00ff, #00ffff);"></span>
+                            <span data-i18n="theme.cyberpunk">Cyberpunk</span>
+                        </div>
+                        <div class="theme-option" data-theme="ocean" onclick="setTheme('ocean')">
+                            <span class="theme-dot" style="background: linear-gradient(135deg, #0ea5e9, #6366f1);"></span>
+                            <span data-i18n="theme.ocean">Ocean</span>
+                        </div>
+                        <div class="theme-option" data-theme="forest" onclick="setTheme('forest')">
+                            <span class="theme-dot" style="background: linear-gradient(135deg, #22c55e, #14532d);"></span>
+                            <span data-i18n="theme.forest">Forest</span>
+                        </div>
+                        <div class="theme-option" data-theme="sunset" onclick="setTheme('sunset')">
+                            <span class="theme-dot" style="background: linear-gradient(135deg, #f97316, #dc2626);"></span>
+                            <span data-i18n="theme.sunset">Sunset</span>
+                        </div>
+                        <div class="theme-option" data-theme="aurora" onclick="setTheme('aurora')">
+                            <span class="theme-dot" style="background: linear-gradient(135deg, #8b5cf6, #06b6d4);"></span>
+                            <span data-i18n="theme.aurora">Aurora</span>
+                        </div>
+                        <div class="theme-option" data-theme="warm" onclick="setTheme('warm')">
+                            <span class="theme-dot" style="background: linear-gradient(135deg, #fbbf24, #78716c);"></span>
+                            <span data-i18n="theme.warm">Warm</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Language Toggle -->
+                <button onclick="toggleLanguage()" id="lang-toggle"
+                    class="px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500">
+                    中文
+                </button>
+            </div>
         </div>
 
         <!-- Toast -->
@@ -886,7 +1049,15 @@
                 'message.resetToDefaults': 'Reset to defaults',
                 'message.allEnabled': 'All settings enabled',
                 'message.allDisabled': 'All settings disabled',
-                'message.updated': 'Updated'
+                'message.updated': 'Updated',
+                // Themes
+                'theme.midnight': 'Midnight',
+                'theme.cyberpunk': 'Cyberpunk',
+                'theme.ocean': 'Ocean',
+                'theme.forest': 'Forest',
+                'theme.sunset': 'Sunset',
+                'theme.aurora': 'Aurora',
+                'theme.warm': 'Warm'
             },
             zh: {
                 // 标签页
@@ -985,18 +1156,91 @@
                 'message.resetToDefaults': '已重置为默认值',
                 'message.allEnabled': '所有设置已启用',
                 'message.allDisabled': '所有设置已禁用',
-                'message.updated': '已更新'
+                'message.updated': '已更新',
+                // 主题
+                'theme.midnight': '午夜',
+                'theme.cyberpunk': '赛博朋克',
+                'theme.ocean': '海洋',
+                'theme.forest': '森林',
+                'theme.sunset': '日落',
+                'theme.aurora': '极光',
+                'theme.warm': '暖色'
             }
         };
 
         // Get current language from localStorage or default to 'en'
         let currentLang = localStorage.getItem('anti-api-language') || 'en';
 
+        // Theme system
+        let currentTheme = localStorage.getItem('anti-api-theme') || 'midnight';
+
+        const themeNames = {
+            midnight: { icon: '🌙', en: 'Midnight', zh: '午夜' },
+            cyberpunk: { icon: '🔮', en: 'Cyberpunk', zh: '赛博朋克' },
+            ocean: { icon: '🌊', en: 'Ocean', zh: '海洋' },
+            forest: { icon: '🌲', en: 'Forest', zh: '森林' },
+            sunset: { icon: '🌅', en: 'Sunset', zh: '日落' },
+            aurora: { icon: '✨', en: 'Aurora', zh: '极光' },
+            warm: { icon: '🔥', en: 'Warm', zh: '暖色' }
+        };
+
+        function toggleThemeDropdown() {
+            const dropdown = document.getElementById('theme-dropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        function setTheme(themeName) {
+            currentTheme = themeName;
+            localStorage.setItem('anti-api-theme', themeName);
+            document.documentElement.setAttribute('data-theme', themeName);
+
+            // Update button text
+            const themeNameEl = document.getElementById('theme-name');
+            const themeIconEl = document.getElementById('theme-icon');
+            const info = themeNames[themeName] || themeNames.midnight;
+            themeIconEl.textContent = info.icon;
+            themeNameEl.textContent = currentLang === 'zh' ? info.zh : info.en;
+
+            // Update active state in dropdown
+            document.querySelectorAll('.theme-option').forEach(opt => {
+                opt.classList.toggle('active', opt.dataset.theme === themeName);
+            });
+
+            // Close dropdown
+            document.getElementById('theme-dropdown').classList.remove('show');
+        }
+
+        function initTheme() {
+            document.documentElement.setAttribute('data-theme', currentTheme);
+            const info = themeNames[currentTheme] || themeNames.midnight;
+            const themeNameEl = document.getElementById('theme-name');
+            const themeIconEl = document.getElementById('theme-icon');
+            if (themeIconEl) themeIconEl.textContent = info.icon;
+            if (themeNameEl) themeNameEl.textContent = currentLang === 'zh' ? info.zh : info.en;
+
+            // Set active state
+            document.querySelectorAll('.theme-option').forEach(opt => {
+                opt.classList.toggle('active', opt.dataset.theme === currentTheme);
+            });
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            const selector = document.querySelector('.theme-selector');
+            if (selector && !selector.contains(e.target)) {
+                document.getElementById('theme-dropdown')?.classList.remove('show');
+            }
+        });
+
         // Toggle language
         function toggleLanguage() {
             currentLang = currentLang === 'en' ? 'zh' : 'en';
             localStorage.setItem('anti-api-language', currentLang);
             updateLanguage();
+            // Update theme name for current language
+            const info = themeNames[currentTheme] || themeNames.midnight;
+            const themeNameEl = document.getElementById('theme-name');
+            if (themeNameEl) themeNameEl.textContent = currentLang === 'zh' ? info.zh : info.en;
         }
 
         // Update all text elements based on current language
@@ -1017,6 +1261,7 @@
         // Initialize language on page load
         document.addEventListener('DOMContentLoaded', () => {
             updateLanguage();
+            initTheme();
         });
 
         // Tab state
