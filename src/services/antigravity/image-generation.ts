@@ -9,7 +9,7 @@ import { getAccessToken } from "./oauth"
 import { accountManager } from "./account-manager"
 import { state } from "~/lib/state"
 import { UpstreamError } from "~/lib/error"
-import { formatLogTime } from "~/lib/logger"
+import { formatLogTime, setRequestLogContext } from "~/lib/logger"
 
 const ANTIGRAVITY_BASE_URLS = [
     "https://daily-cloudcode-pa.googleapis.com",
@@ -346,6 +346,7 @@ export async function generateImages(request: ImageGenerationRequest): Promise<I
         // Get account with lock support
         let accessToken: string
         let accountId: string | undefined
+        let accountEmail: string | undefined
         let projectId: string
         let releaseAccountLock: (() => void) | null = null
 
@@ -353,14 +354,19 @@ export async function generateImages(request: ImageGenerationRequest): Promise<I
         if (account) {
             accessToken = account.accessToken
             accountId = account.accountId
+            accountEmail = account.email
             projectId = account.projectId
 
             // Acquire account lock to prevent concurrent requests
             releaseAccountLock = await accountManager.acquireAccountLock(accountId)
         } else {
             accessToken = await getAccessToken()
+            accountEmail = state.userEmail || undefined
             projectId = state.cloudaicompanionProject || "unknown"
         }
+
+        // Set log context for request logging (显示在控制台日志中)
+        setRequestLogContext({ model: request.model, provider: "antigravity", account: accountEmail })
 
         try {
             // Parse model configuration (with OpenAI parameter support)
