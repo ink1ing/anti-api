@@ -572,9 +572,37 @@
         };
         const PROVIDER_ORDER = ['antigravity', 'codex', 'copilot'];
         const MODEL_GROUPS = {
-            claudeGpt: ['claude-sonnet-4-5', 'claude-sonnet-4-5-thinking', 'claude-opus-4-5-thinking', 'gpt-oss-120b'],
-            gpro: ['gemini-3-pro-low', 'gemini-3-pro-high'],
-            gflash: ['gemini-3-flash'],
+            // Claude 配额组：所有 Claude 模型 + GPT-OSS
+            claudeGpt: [
+                'claude-opus-4-5-thinking',
+                'claude-sonnet-4-5', 'claude-sonnet-4-5-thinking',
+                'claude-haiku-4-5', 'claude-haiku-4-5-thinking',
+                'claude-opus-4', 'claude-opus-4-thinking',
+                'claude-sonnet-4', 'claude-sonnet-4-thinking',
+                'gpt-oss-120b'
+            ],
+            // Gemini Pro 配额组：所有 Gemini 3 Pro 变体 + 图像生成
+            gpro: [
+                'gemini-3-pro-high', 'gemini-3-pro-low', 'gemini-3-pro',
+                // 图像生成模型 (21个变体)
+                'gemini-3-pro-image',
+                'gemini-3-pro-image-1x1', 'gemini-3-pro-image-4x3', 'gemini-3-pro-image-3x4',
+                'gemini-3-pro-image-16x9', 'gemini-3-pro-image-9x16', 'gemini-3-pro-image-21x9',
+                'gemini-3-pro-image-2k',
+                'gemini-3-pro-image-2k-1x1', 'gemini-3-pro-image-2k-4x3', 'gemini-3-pro-image-2k-3x4',
+                'gemini-3-pro-image-2k-16x9', 'gemini-3-pro-image-2k-9x16', 'gemini-3-pro-image-2k-21x9',
+                'gemini-3-pro-image-4k',
+                'gemini-3-pro-image-4k-1x1', 'gemini-3-pro-image-4k-4x3', 'gemini-3-pro-image-4k-3x4',
+                'gemini-3-pro-image-4k-16x9', 'gemini-3-pro-image-4k-9x16', 'gemini-3-pro-image-4k-21x9',
+                // Gemini 2.5 Pro
+                'gemini-2.5-pro'
+            ],
+            // Gemini Flash 配额组：所有 Flash 变体
+            gflash: [
+                'gemini-3-flash',
+                'gemini-2.5-flash', 'gemini-2.5-flash-thinking', 'gemini-2.5-flash-lite',
+                'gemini-2.0-flash-exp'
+            ],
         };
 
         const dom = {
