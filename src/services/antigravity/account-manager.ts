@@ -588,8 +588,8 @@ class AccountManager {
                 return true
             }
 
-            // 打印调试信息
-            consola.debug(`Account ${account.email}: ${modelId} quota = ${quotaPercent}%, reserve = ${reservePercent}%`)
+            // 打印调试信息（使用 console.log 确保输出）
+            console.log(`[Account] ${account.email}: ${modelId} quota = ${quotaPercent}%, reserve = ${reservePercent}%`)
 
             // 配额必须高于保留阈值
             return quotaPercent > reservePercent
@@ -615,7 +615,7 @@ class AccountManager {
                     // Prefer idle accounts when available
                 } else if (!hasQuota) {
                     // 该账号配额不足（低于保留阈值），跳过
-                    consola.debug(`Account ${firstAccount.email} has insufficient quota for ${modelId} (reserve: ${reservePercent}%), skipping...`)
+                    console.log(`[Account] ${firstAccount.email} has insufficient quota for ${modelId} (${reservePercent}% reserve), skipping...`)
                 } else {
                 // 刷新 token 如果需要
                 if (firstAccount.expiresAt > 0 && now > firstAccount.expiresAt - 5 * 60 * 1000) {
@@ -656,7 +656,7 @@ class AccountManager {
             // 🆕 检查模型配额（包含配额保留）
             const hasQuota = await hasModelQuota(accountId)
             if (!hasQuota) {
-                consola.debug(`Account ${account.email} has insufficient quota for ${modelId} (reserve: ${reservePercent}%), skipping...`)
+                console.log(`[Account] ${account.email} has insufficient quota for ${modelId} (${reservePercent}% reserve), skipping...`)
                 continue
             }
 
