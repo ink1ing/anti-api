@@ -1907,11 +1907,17 @@
 
             if (diffMs <= 0) return 'Resetting...';
 
-            const hours = Math.floor(diffMs / (1000 * 60 * 60));
+            const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
-            if (hours > 0) return `${hours}h ${minutes}m`;
-            return `${minutes}m`;
+            // Build time string: 3d1h16m
+            const parts = [];
+            if (days > 0) parts.push(`${days}d`);
+            if (hours > 0) parts.push(`${hours}h`);
+            if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`);
+
+            return parts.join('');
         }
 
         function showToast(message) {

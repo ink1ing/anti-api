@@ -581,28 +581,33 @@
                 'claude-sonnet-4', 'claude-sonnet-4-thinking',
                 'gpt-oss-120b'
             ],
-            // Gemini Pro 配额组：所有 Gemini 3 Pro 变体 + 图像生成
+            // Gemini Pro 配额组：所有 Gemini 3 Pro 变体
             gpro: [
-                'gemini-3-pro-high', 'gemini-3-pro-low', 'gemini-3-pro',
-                // 图像生成模型 (21个变体)
-                'gemini-3-pro-image',
-                'gemini-3-pro-image-1x1', 'gemini-3-pro-image-4x3', 'gemini-3-pro-image-3x4',
-                'gemini-3-pro-image-16x9', 'gemini-3-pro-image-9x16', 'gemini-3-pro-image-21x9',
-                'gemini-3-pro-image-2k',
-                'gemini-3-pro-image-2k-1x1', 'gemini-3-pro-image-2k-4x3', 'gemini-3-pro-image-2k-3x4',
-                'gemini-3-pro-image-2k-16x9', 'gemini-3-pro-image-2k-9x16', 'gemini-3-pro-image-2k-21x9',
-                'gemini-3-pro-image-4k',
-                'gemini-3-pro-image-4k-1x1', 'gemini-3-pro-image-4k-4x3', 'gemini-3-pro-image-4k-3x4',
-                'gemini-3-pro-image-4k-16x9', 'gemini-3-pro-image-4k-9x16', 'gemini-3-pro-image-4k-21x9',
-                // Gemini 2.5 Pro
-                'gemini-2.5-pro'
+                'gemini-3-pro', 'gemini-3-pro-low', 'gemini-3-pro-high',
+                'gemini-3-pro-latest', 'gemini-3-pro-high-latest'
             ],
-            // Gemini Flash 配额组：所有 Flash 变体
+            // Gemini Flash 配额组：所有 Gemini 3 Flash 变体
             gflash: [
-                'gemini-3-flash',
-                'gemini-2.5-flash', 'gemini-2.5-flash-thinking', 'gemini-2.5-flash-lite',
-                'gemini-2.0-flash-exp'
+                'gemini-3-flash', 'gemini-3-flash-latest',
+                'gemini-3-flash-lite', 'gemini-3-flash-lite-latest'
             ],
+            // Gemini Image 配额组：所有画图模型变体
+            gimage: [
+                'gemini-3-pro-image',
+                'gemini-3-pro-image-1x1', 'gemini-3-pro-image-1-1',
+                'gemini-3-pro-image-16x9', 'gemini-3-pro-image-16-9',
+                'gemini-3-pro-image-9x16', 'gemini-3-pro-image-9-16',
+                'gemini-3-pro-image-4x3', 'gemini-3-pro-image-4-3',
+                'gemini-3-pro-image-3x4', 'gemini-3-pro-image-3-4',
+                'gemini-3-pro-image-21x9', 'gemini-3-pro-image-21-9',
+                'gemini-3-pro-image-2k', 'gemini-3-pro-image-4k',
+                'gemini-3-pro-image-2k-1x1', 'gemini-3-pro-image-4k-1x1',
+                'gemini-3-pro-image-2k-16x9', 'gemini-3-pro-image-4k-16x9',
+                'gemini-3-pro-image-2k-9x16', 'gemini-3-pro-image-4k-9x16',
+                'gemini-3-pro-image-2k-4x3', 'gemini-3-pro-image-4k-4x3',
+                'gemini-3-pro-image-2k-3x4', 'gemini-3-pro-image-4k-3x4',
+                'gemini-3-pro-image-2k-21x9', 'gemini-3-pro-image-4k-21x9'
+            ]
         };
 
         const dom = {
@@ -1104,6 +1109,7 @@
             if (MODEL_GROUPS.claudeGpt.includes(modelId)) barKey = 'claude_gpt';
             else if (MODEL_GROUPS.gpro.includes(modelId)) barKey = 'gpro';
             else if (MODEL_GROUPS.gflash.includes(modelId)) barKey = 'gflash';
+            else if (MODEL_GROUPS.gimage.includes(modelId)) barKey = 'gimage';
 
             if (!barKey) return null;
 

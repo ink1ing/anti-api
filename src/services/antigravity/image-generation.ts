@@ -205,12 +205,14 @@ async function sendImageRequest(
     antigravityRequest: any,
     accessToken: string,
     accountId?: string,
-    modelName?: string
+    modelName?: string,
+    retryAfterHeader?: string
 ): Promise<any> {
     const startTime = Date.now()
     let lastError: Error | null = null
     let lastStatusCode = 0
     let lastErrorText = ""
+    let lastRetryAfterHeader = retryAfterHeader
 
     for (const baseUrl of ANTIGRAVITY_BASE_URLS) {
         const url = baseUrl + STREAM_ENDPOINT + "?alt=sse"
@@ -240,7 +242,20 @@ async function sendImageRequest(
 
             lastStatusCode = response.status
             lastErrorText = await response.text()
+            lastRetryAfterHeader = response.headers.get("retry-after") || undefined
+
             consola.warn("Image API error " + response.status, lastErrorText.substring(0, 200))
+
+            // Handle 429 errors with account limiting
+            if (response.status === 429 && accountId) {
+                await accountManager.markRateLimitedFromError(
+                    accountId,
+                    response.status,
+                    lastErrorText,
+                    lastRetryAfterHeader
+                )
+                accountManager.moveToEndOfQueue(accountId)
+            }
 
             if (response.status === 429 || response.status >= 500) {
                 lastError = new Error("API error: " + response.status)
@@ -321,83 +336,94 @@ function enhancePrompt(basePrompt: string, quality?: string, style?: string): st
  * Generate images using Antigravity's Gemini 3 Pro Image model
  */
 export async function generateImages(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
-    // Get account
+    // Get account with lock support
     let accessToken: string
     let accountId: string | undefined
     let projectId: string
+    let releaseAccountLock: (() => void) | null = null
 
     const account = await accountManager.getNextAvailableAccount()
     if (account) {
         accessToken = account.accessToken
         accountId = account.accountId
         projectId = account.projectId
+
+        // Acquire account lock to prevent concurrent requests
+        releaseAccountLock = await accountManager.acquireAccountLock(accountId)
     } else {
         accessToken = await getAccessToken()
         projectId = state.cloudaicompanionProject || "unknown"
     }
 
-    // Parse model configuration (with OpenAI parameter support)
-    const imageConfig = parseImageModelConfig(request.model, request.size, request.quality)
+    try {
+        // Parse model configuration (with OpenAI parameter support)
+        const imageConfig = parseImageModelConfig(request.model, request.size, request.quality)
 
-    // Enhance prompt based on quality and style
-    const finalPrompt = enhancePrompt(request.prompt, request.quality, request.style)
+        // Enhance prompt based on quality and style
+        const finalPrompt = enhancePrompt(request.prompt, request.quality, request.style)
 
-    // Generate images concurrently (support multiple if requested)
-    const numImages = Math.min(request.n || 1, 10)  // Max 10 images
-    const tasks: Promise<{ images: string[]; mimeType: string }>[] = []
+        // Generate images concurrently (support multiple if requested)
+        const numImages = Math.min(request.n || 1, 10)  // Max 10 images
+        const tasks: Promise<{ images: string[]; mimeType: string }>[] = []
 
-    for (let i = 0; i < numImages; i++) {
-        const antigravityRequest = buildImageGenRequest(finalPrompt, imageConfig, projectId)
-        tasks.push(
-            sendImageRequest(antigravityRequest, accessToken, accountId, request.model)
-        )
-    }
-
-    // Collect results (partial success allowed)
-    const allImages: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> = []
-    const errors: string[] = []
-
-    const results = await Promise.allSettled(tasks)
-    for (let i = 0; i < results.length; i++) {
-        const result = results[i]
-        if (result.status === "fulfilled") {
-            for (const imageData of result.value.images) {
-                if (request.response_format === "url") {
-                    // Convert base64 to data URL for "url" format
-                    const dataUrl = `data:${result.value.mimeType};base64,${imageData}`
-                    allImages.push({ url: dataUrl, revised_prompt: finalPrompt })
-                } else {
-                    allImages.push({ b64_json: imageData, revised_prompt: finalPrompt })
-                }
-            }
-        } else {
-            const errorMsg = result.reason?.message || String(result.reason)
-            consola.error(`Image generation task ${i + 1} failed:`, errorMsg)
-            errors.push(errorMsg)
+        for (let i = 0; i < numImages; i++) {
+            const antigravityRequest = buildImageGenRequest(finalPrompt, imageConfig, projectId)
+            tasks.push(
+                sendImageRequest(antigravityRequest, accessToken, accountId, request.model)
+            )
         }
-    }
 
-    if (allImages.length === 0) {
-        const errorSummary = errors.length > 0 ? errors.join("; ") : "No images generated"
-        throw new Error(`All ${numImages} image generation requests failed. ${errorSummary}`)
-    }
+        // Collect results (partial success allowed)
+        const allImages: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> = []
+        const errors: string[] = []
 
-    // Log partial success warning
-    if (errors.length > 0) {
-        consola.warn(
-            `Partial success: ${allImages.length} out of ${numImages} images generated. Errors: ${errors.join("; ")}`
-        )
-    } else {
-        consola.success(`Successfully generated ${allImages.length} image(s)`)
-    }
+        const results = await Promise.allSettled(tasks)
+        for (let i = 0; i < results.length; i++) {
+            const result = results[i]
+            if (result.status === "fulfilled") {
+                for (const imageData of result.value.images) {
+                    if (request.response_format === "url") {
+                        // Convert base64 to data URL for "url" format
+                        const dataUrl = `data:${result.value.mimeType};base64,${imageData}`
+                        allImages.push({ url: dataUrl, revised_prompt: finalPrompt })
+                    } else {
+                        allImages.push({ b64_json: imageData, revised_prompt: finalPrompt })
+                    }
+                }
+            } else {
+                const errorMsg = result.reason?.message || String(result.reason)
+                consola.error(`Image generation task ${i + 1} failed:`, errorMsg)
+                errors.push(errorMsg)
+            }
+        }
 
-    // Record usage
-    import("~/services/usage-tracker").then(({ recordUsage }) => {
-        recordUsage(request.model, 100 * allImages.length, 0)  // Estimate 100 input tokens per image
-    }).catch(() => {})
+        if (allImages.length === 0) {
+            const errorSummary = errors.length > 0 ? errors.join("; ") : "No images generated"
+            throw new Error(`All ${numImages} image generation requests failed. ${errorSummary}`)
+        }
 
-    return {
-        created: Math.floor(Date.now() / 1000),
-        data: allImages
+        // Log partial success warning
+        if (errors.length > 0) {
+            consola.warn(
+                `Partial success: ${allImages.length} out of ${numImages} images generated. Errors: ${errors.join("; ")}`
+            )
+        } else {
+            consola.success(`Successfully generated ${allImages.length} image(s)`)
+        }
+
+        // Record usage
+        import("~/services/usage-tracker").then(({ recordUsage }) => {
+            recordUsage(request.model, 100 * allImages.length, 0)  // Estimate 100 input tokens per image
+        }).catch(() => {})
+
+        return {
+            created: Math.floor(Date.now() / 1000),
+            data: allImages
+        }
+    } finally {
+        // Always release the account lock
+        if (releaseAccountLock) {
+            releaseAccountLock()
+        }
     }
 }
