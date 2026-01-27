@@ -27,7 +27,9 @@ export interface ImageGenerationRequest {
     model: string       // User-provided model name (e.g., "gemini-3-pro-image-4k-16x9")
     prompt: string
     n?: number          // Number of images (default 1)
-    size?: string       // Size hint (e.g., "1024x1024")
+    size?: string       // Size hint (e.g., "1024x1024", "1920x1080")
+    quality?: string    // Quality hint ("standard", "hd", "medium")
+    style?: string      // Style hint ("vivid", "natural")
     response_format?: "url" | "b64_json"
 }
 
@@ -42,42 +44,91 @@ export interface ImageGenerationResponse {
 
 interface ImageConfig {
     aspectRatio: string
-    imageSize: string
+    imageSize?: string  // Optional: only set for 4K/2K quality
 }
 
 /**
- * Parse model name suffix to extract image configuration
- * Examples:
- *   gemini-3-pro-image -> { aspectRatio: "1:1", imageSize: "2K" }
- *   gemini-3-pro-image-4k -> { aspectRatio: "1:1", imageSize: "4K" }
- *   gemini-3-pro-image-4k-16x9 -> { aspectRatio: "16:9", imageSize: "4K" }
- *   gemini-3-pro-image-2k-9x16 -> { aspectRatio: "9:16", imageSize: "2K" }
+ * Calculate aspect ratio from OpenAI size format (WIDTHxHEIGHT)
+ * Uses tolerance matching for common aspect ratios
  */
-function parseImageModelConfig(modelName: string): ImageConfig {
+function calculateAspectRatioFromSize(size: string): string {
+    const parts = size.split("x")
+    if (parts.length !== 2) return "1:1"
+
+    const width = parseFloat(parts[0])
+    const height = parseFloat(parts[1])
+
+    if (!width || !height || width <= 0 || height <= 0) return "1:1"
+
+    const ratio = width / height
+    const tolerance = 0.1
+
+    // Match common aspect ratios with tolerance
+    if (Math.abs(ratio - 21 / 9) < tolerance) return "21:9"
+    if (Math.abs(ratio - 16 / 9) < tolerance) return "16:9"
+    if (Math.abs(ratio - 4 / 3) < tolerance) return "4:3"
+    if (Math.abs(ratio - 3 / 4) < tolerance) return "3:4"
+    if (Math.abs(ratio - 9 / 16) < tolerance) return "9:16"
+    if (Math.abs(ratio - 1) < tolerance) return "1:1"
+
+    return "1:1" // Default fallback
+}
+
+/**
+ * Parse image configuration from multiple sources (with priority):
+ * 1. OpenAI API parameters (size, quality) - highest priority
+ * 2. Model name suffixes (e.g., -16x9, -4k) - fallback for backward compatibility
+ *
+ * Examples:
+ *   parseImageConfig("gemini-3-pro-image", "1920x1080", "hd")
+ *     -> { aspectRatio: "16:9", imageSize: "4K" }
+ *   parseImageConfig("gemini-3-pro-image-4k-16x9", null, null)
+ *     -> { aspectRatio: "16:9", imageSize: "4K" }
+ */
+function parseImageModelConfig(
+    modelName: string,
+    size?: string | null,
+    quality?: string | null
+): ImageConfig {
     const normalized = modelName.toLowerCase()
 
-    // Default values
-    let imageSize = "2K"
+    // 1. Parse aspect ratio (size param takes priority)
     let aspectRatio = "1:1"
-
-    // Parse size (4k or 2k)
-    if (normalized.includes("4k")) {
-        imageSize = "4K"
-    } else if (normalized.includes("2k")) {
-        imageSize = "2K"
+    if (size) {
+        aspectRatio = calculateAspectRatioFromSize(size)
+    } else {
+        // Fallback to model suffix parsing
+        if (normalized.includes("21x9") || normalized.includes("21-9")) {
+            aspectRatio = "21:9"
+        } else if (normalized.includes("16x9") || normalized.includes("16-9")) {
+            aspectRatio = "16:9"
+        } else if (normalized.includes("9x16") || normalized.includes("9-16")) {
+            aspectRatio = "9:16"
+        } else if (normalized.includes("4x3") || normalized.includes("4-3")) {
+            aspectRatio = "4:3"
+        } else if (normalized.includes("3x4") || normalized.includes("3-4")) {
+            aspectRatio = "3:4"
+        } else if (normalized.includes("1x1") || normalized.includes("1-1")) {
+            aspectRatio = "1:1"
+        }
     }
 
-    // Parse aspect ratio
-    if (normalized.includes("16x9") || normalized.includes("16-9")) {
-        aspectRatio = "16:9"
-    } else if (normalized.includes("9x16") || normalized.includes("9-16")) {
-        aspectRatio = "9:16"
-    } else if (normalized.includes("4x3") || normalized.includes("4-3")) {
-        aspectRatio = "4:3"
-    } else if (normalized.includes("3x4") || normalized.includes("3-4")) {
-        aspectRatio = "3:4"
-    } else if (normalized.includes("1x1") || normalized.includes("1-1")) {
-        aspectRatio = "1:1"
+    // 2. Parse image size (quality param takes priority)
+    let imageSize: string | undefined
+    if (quality) {
+        if (quality === "hd") {
+            imageSize = "4K"
+        } else if (quality === "medium") {
+            imageSize = "2K"
+        }
+        // "standard" or other values: don't set imageSize (let API decide)
+    } else {
+        // Fallback to model suffix parsing
+        if (normalized.includes("4k") || normalized.includes("hd")) {
+            imageSize = "4K"
+        } else if (normalized.includes("2k")) {
+            imageSize = "2K"
+        }
     }
 
     return { aspectRatio, imageSize }
@@ -87,6 +138,18 @@ function parseImageModelConfig(modelName: string): ImageConfig {
  * Build the Antigravity image generation request
  */
 function buildImageGenRequest(prompt: string, imageConfig: ImageConfig, projectId: string): any {
+    const genConfig: any = {
+        candidateCount: 1,
+        imageConfig: {
+            aspectRatio: imageConfig.aspectRatio
+        }
+    }
+
+    // Only add imageSize if explicitly set (4K/2K)
+    if (imageConfig.imageSize) {
+        genConfig.imageConfig.imageSize = imageConfig.imageSize
+    }
+
     return {
         model: IMAGE_MODEL_NAME,
         userAgent: "antigravity",
@@ -100,13 +163,14 @@ function buildImageGenRequest(prompt: string, imageConfig: ImageConfig, projectI
                     parts: [{ text: prompt }]
                 }
             ],
-            generationConfig: {
-                candidateCount: 1,
-                imageConfig: {
-                    aspectRatio: imageConfig.aspectRatio,
-                    imageSize: imageConfig.imageSize
-                }
-            }
+            generationConfig: genConfig,
+            safetySettings: [
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+                { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" }
+            ]
         }
     }
 }
@@ -233,6 +297,27 @@ function parseImageResponse(rawSse: string): { images: string[], mimeType: strin
 }
 
 /**
+ * Enhance prompt based on quality and style parameters
+ */
+function enhancePrompt(basePrompt: string, quality?: string, style?: string): string {
+    let enhanced = basePrompt
+
+    // Add quality enhancements
+    if (quality === "hd") {
+        enhanced += ", (high quality, highly detailed, 4k resolution, hdr)"
+    }
+
+    // Add style enhancements
+    if (style === "vivid") {
+        enhanced += ", (vivid colors, dramatic lighting, rich details)"
+    } else if (style === "natural") {
+        enhanced += ", (natural lighting, realistic, photorealistic)"
+    }
+
+    return enhanced
+}
+
+/**
  * Generate images using Antigravity's Gemini 3 Pro Image model
  */
 export async function generateImages(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
@@ -251,47 +336,64 @@ export async function generateImages(request: ImageGenerationRequest): Promise<I
         projectId = state.cloudaicompanionProject || "unknown"
     }
 
-    // Parse model configuration
-    const imageConfig = parseImageModelConfig(request.model)
+    // Parse model configuration (with OpenAI parameter support)
+    const imageConfig = parseImageModelConfig(request.model, request.size, request.quality)
 
-    // Build request
-    const antigravityRequest = buildImageGenRequest(request.prompt, imageConfig, projectId)
+    // Enhance prompt based on quality and style
+    const finalPrompt = enhancePrompt(request.prompt, request.quality, request.style)
 
-    // Generate images (support multiple if requested)
-    const numImages = Math.min(request.n || 1, 4)  // Max 4 images
-    const allImages: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> = []
+    // Generate images concurrently (support multiple if requested)
+    const numImages = Math.min(request.n || 1, 10)  // Max 10 images
+    const tasks: Promise<{ images: string[]; mimeType: string }>[] = []
 
     for (let i = 0; i < numImages; i++) {
-        try {
-            const result = await sendImageRequest(
-                antigravityRequest,
-                accessToken,
-                accountId,
-                request.model
-            )
+        const antigravityRequest = buildImageGenRequest(finalPrompt, imageConfig, projectId)
+        tasks.push(
+            sendImageRequest(antigravityRequest, accessToken, accountId, request.model)
+        )
+    }
 
-            for (const imageData of result.images) {
+    // Collect results (partial success allowed)
+    const allImages: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> = []
+    const errors: string[] = []
+
+    const results = await Promise.allSettled(tasks)
+    for (let i = 0; i < results.length; i++) {
+        const result = results[i]
+        if (result.status === "fulfilled") {
+            for (const imageData of result.value.images) {
                 if (request.response_format === "url") {
                     // Convert base64 to data URL for "url" format
-                    const dataUrl = `data:${result.mimeType};base64,${imageData}`
-                    allImages.push({ url: dataUrl, revised_prompt: request.prompt })
+                    const dataUrl = `data:${result.value.mimeType};base64,${imageData}`
+                    allImages.push({ url: dataUrl, revised_prompt: finalPrompt })
                 } else {
-                    allImages.push({ b64_json: imageData, revised_prompt: request.prompt })
+                    allImages.push({ b64_json: imageData, revised_prompt: finalPrompt })
                 }
             }
-        } catch (error) {
-            consola.error(`Image generation attempt ${i + 1} failed:`, error)
-            if (i === 0) throw error  // Fail on first attempt
+        } else {
+            const errorMsg = result.reason?.message || String(result.reason)
+            consola.error(`Image generation task ${i + 1} failed:`, errorMsg)
+            errors.push(errorMsg)
         }
     }
 
     if (allImages.length === 0) {
-        throw new Error("No images generated")
+        const errorSummary = errors.length > 0 ? errors.join("; ") : "No images generated"
+        throw new Error(`All ${numImages} image generation requests failed. ${errorSummary}`)
+    }
+
+    // Log partial success warning
+    if (errors.length > 0) {
+        consola.warn(
+            `Partial success: ${allImages.length} out of ${numImages} images generated. Errors: ${errors.join("; ")}`
+        )
+    } else {
+        consola.success(`Successfully generated ${allImages.length} image(s)`)
     }
 
     // Record usage
     import("~/services/usage-tracker").then(({ recordUsage }) => {
-        recordUsage(request.model, 100, 0)  // Estimate 100 input tokens for image gen
+        recordUsage(request.model, 100 * allImages.length, 0)  // Estimate 100 input tokens per image
     }).catch(() => {})
 
     return {

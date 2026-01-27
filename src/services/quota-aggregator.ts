@@ -106,6 +106,11 @@ export function getAccountModelQuotaPercent(provider: "antigravity" | "codex" | 
             const bar = bars.find(b => b.key === "claude_gpt")
             if (bar) return bar.percentage
         }
+        // Gemini Image 模型使用 gimage 配额（优先检查，避免被 pro 匹配）
+        if (modelId.includes("image")) {
+            const bar = bars.find(b => b.key === "gimage")
+            if (bar) return bar.percentage
+        }
         // Gemini Pro 模型使用 gpro 配额
         if (modelId.includes("gemini") && modelId.includes("pro")) {
             const bar = bars.find(b => b.key === "gpro")
@@ -278,11 +283,13 @@ function buildAntigravityBars(models: Record<string, ModelInfo>): AccountBar[] {
     ]
     const gproIds = ["gemini-3-pro-low", "gemini-3-pro-high"]
     const gflashIds = ["gemini-3-flash"]
+    const gimageIds = ["gemini-3-pro-image"]
 
     return [
         buildMergedBar("claude_gpt", "claude&gpt", models, claudeGptIds),
         buildMergedBar("gpro", "gpro", models, gproIds),
         buildMergedBar("gflash", "gflash", models, gflashIds),
+        buildMergedBar("gimage", "gimage", models, gimageIds),
     ]
 }
 

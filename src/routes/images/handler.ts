@@ -34,25 +34,7 @@ export async function handleImageGeneration(c: Context) {
 
     // Normalize common OpenAI model names
     if (model === "dall-e-3" || model === "dall-e-2") {
-        model = "gemini-3-pro-image-4k"
-    }
-
-    // Map size to aspect ratio suffix if not already present
-    if (body.size && !model.includes("x")) {
-        const sizeMap: Record<string, string> = {
-            "1024x1024": "-1x1",
-            "1792x1024": "-16x9",
-            "1024x1792": "-9x16",
-            "1536x1024": "-16x9",
-            "1024x1536": "-9x16",
-        }
-        const suffix = sizeMap[body.size]
-        if (suffix && !model.endsWith(suffix)) {
-            // Add suffix if model doesn't already have aspect ratio
-            if (!model.match(/\d+x\d+$/)) {
-                model = model + suffix
-            }
-        }
+        model = "gemini-3-pro-image"
     }
 
     const request: ImageGenerationRequest = {
@@ -60,6 +42,8 @@ export async function handleImageGeneration(c: Context) {
         prompt: body.prompt,
         n: body.n || 1,
         size: body.size,
+        quality: body.quality,
+        style: body.style,
         response_format: body.response_format || "b64_json"
     }
 
