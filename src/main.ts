@@ -70,10 +70,12 @@ const start = defineCommand({
         state.port = parseInt(args.port, 10)
         state.verbose = args.verbose
 
-        if (args.verbose) {
+        // 检查命令行参数或环境变量
+        const isVerbose = args.verbose || process.env.ANTI_API_VERBOSE === "1"
+        if (isVerbose) {
             consola.level = 4 // debug
         } else {
-            consola.level = 0 // silent
+            consola.level = 3 // info (默认显示 info 及以上级别)
         }
 
         // 尝试加载已保存的 OAuth 认证
