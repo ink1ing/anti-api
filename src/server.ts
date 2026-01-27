@@ -10,6 +10,7 @@ import consola from "consola"
 
 import { messageRoutes } from "./routes/messages/route"
 import { openaiRoutes } from "./routes/openai/route"
+import { imageRoutes } from "./routes/images/route"
 import { authRouter } from "./routes/auth/route"
 import { remoteRouter } from "./routes/remote/route"
 import { routingRouter } from "./routes/routing/route"
@@ -204,6 +205,9 @@ server.post("/usage/reset", (c) => {
 
 // OpenAI 兼容端点
 server.route("/v1/chat/completions", openaiRoutes)
+
+// OpenAI Image Generation 端点
+server.route("/v1/images", imageRoutes)
 
 // Anthropic兼容端点
 server.route("/v1/messages", messageRoutes)
