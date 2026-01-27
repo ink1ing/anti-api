@@ -252,13 +252,32 @@ Configure application behavior at `http://localhost:8964/settings`:
 ### Antigravity
 | Model ID | Description |
 |----------|-------------|
+| **Claude 4.5 Series** | |
+| `claude-opus-4-5-thinking` | Most capable, extended reasoning |
 | `claude-sonnet-4-5` | Fast, balanced |
 | `claude-sonnet-4-5-thinking` | Extended reasoning |
-| `claude-opus-4-5-thinking` | Most capable |
-| `gemini-3-flash` | Fastest responses |
+| `claude-haiku-4-5` | Fastest Claude |
+| `claude-haiku-4-5-thinking` | Fast with reasoning |
+| **Claude 4 Series** | |
+| `claude-opus-4` | Opus 4 base |
+| `claude-opus-4-thinking` | Opus 4 with reasoning |
+| `claude-sonnet-4` | Sonnet 4 base |
+| `claude-sonnet-4-thinking` | Sonnet 4 with reasoning |
+| **Gemini 3 Series** | |
 | `gemini-3-pro-high` | High quality |
 | `gemini-3-pro-low` | Cost-effective |
-| `gpt-oss-120b` | Open source |
+| `gemini-3-pro` | Balanced |
+| `gemini-3-flash` | Fastest responses |
+| `gemini-3-pro-image` | Image generation (supports -2k, -4k, -1x1, -16x9, etc.) |
+| **Gemini 2.5 Series** | |
+| `gemini-2.5-pro` | Pro 2.5 |
+| `gemini-2.5-flash` | Flash 2.5 |
+| `gemini-2.5-flash-thinking` | Flash with reasoning |
+| `gemini-2.5-flash-lite` | Lightweight Flash |
+| **Gemini 2.0 Series** | |
+| `gemini-2.0-flash-exp` | Experimental Flash |
+| **Other** | |
+| `gpt-oss-120b` | Open source 120B |
 
 ### GitHub Copilot
 | Model ID | Description |
@@ -516,13 +535,32 @@ docker compose pull anti-api && docker compose up -d anti-api
 ### Antigravity
 | 模型 ID | 说明 |
 |---------|------|
+| **Claude 4.5 系列** | |
+| `claude-opus-4-5-thinking` | 最强能力，扩展推理 |
 | `claude-sonnet-4-5` | 快速均衡 |
 | `claude-sonnet-4-5-thinking` | 扩展推理 |
-| `claude-opus-4-5-thinking` | 最强能力 |
-| `gemini-3-flash` | 最快响应 |
+| `claude-haiku-4-5` | 最快的 Claude |
+| `claude-haiku-4-5-thinking` | 快速推理 |
+| **Claude 4 系列** | |
+| `claude-opus-4` | Opus 4 基础版 |
+| `claude-opus-4-thinking` | Opus 4 推理版 |
+| `claude-sonnet-4` | Sonnet 4 基础版 |
+| `claude-sonnet-4-thinking` | Sonnet 4 推理版 |
+| **Gemini 3 系列** | |
 | `gemini-3-pro-high` | 高质量 |
 | `gemini-3-pro-low` | 低配额消耗 |
-| `gpt-oss-120b` | 开源模型 |
+| `gemini-3-pro` | 均衡版 |
+| `gemini-3-flash` | 最快响应 |
+| `gemini-3-pro-image` | 图像生成 (支持 -2k, -4k, -1x1, -16x9 等后缀) |
+| **Gemini 2.5 系列** | |
+| `gemini-2.5-pro` | Pro 2.5 |
+| `gemini-2.5-flash` | Flash 2.5 |
+| `gemini-2.5-flash-thinking` | Flash 推理版 |
+| `gemini-2.5-flash-lite` | 轻量版 Flash |
+| **Gemini 2.0 系列** | |
+| `gemini-2.0-flash-exp` | 实验版 Flash |
+| **其他** | |
+| `gpt-oss-120b` | 开源 120B 模型 |
 
 ### GitHub Copilot
 | 模型 ID | 说明 |
