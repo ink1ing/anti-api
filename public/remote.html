@@ -10,17 +10,97 @@
         type="image/x-icon">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* Theme Variables (Default: Midnight) */
+        :root {
+            --theme-bg: #000000;
+            --theme-card-bg: transparent;
+            --theme-card-border: rgba(55, 65, 81, 0.5);
+            --theme-text: #d1d5db;
+            --theme-text-muted: #6b7280;
+            --theme-accent: #22d3ee;
+        }
+
+        /* Theme: Midnight (Default) */
+        [data-theme="midnight"] {
+            --theme-bg: #000000;
+            --theme-card-bg: transparent;
+            --theme-card-border: rgba(55, 65, 81, 0.5);
+            --theme-text: #d1d5db;
+            --theme-text-muted: #6b7280;
+            --theme-accent: #22d3ee;
+        }
+
+        /* Theme: Cyberpunk */
+        [data-theme="cyberpunk"] {
+            --theme-bg: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            --theme-card-bg: rgba(48, 43, 99, 0.4);
+            --theme-card-border: rgba(255, 0, 128, 0.3);
+            --theme-text: #ff00ff;
+            --theme-text-muted: #a855f7;
+            --theme-accent: #ff0080;
+        }
+
+        /* Theme: Ocean */
+        [data-theme="ocean"] {
+            --theme-bg: linear-gradient(180deg, #0a1628 0%, #0d2137 50%, #0f172a 100%);
+            --theme-card-bg: rgba(14, 165, 233, 0.08);
+            --theme-card-border: rgba(14, 165, 233, 0.25);
+            --theme-text: #7dd3fc;
+            --theme-text-muted: #0ea5e9;
+            --theme-accent: #38bdf8;
+        }
+
+        /* Theme: Forest */
+        [data-theme="forest"] {
+            --theme-bg: linear-gradient(180deg, #052e16 0%, #14532d 50%, #0c1f0f 100%);
+            --theme-card-bg: rgba(34, 197, 94, 0.1);
+            --theme-card-border: rgba(34, 197, 94, 0.3);
+            --theme-text: #86efac;
+            --theme-text-muted: #22c55e;
+            --theme-accent: #4ade80;
+        }
+
+        /* Theme: Sunset */
+        [data-theme="sunset"] {
+            --theme-bg: linear-gradient(135deg, #1a0a0a 0%, #2d1810 50%, #1f0f05 100%);
+            --theme-card-bg: rgba(251, 146, 60, 0.1);
+            --theme-card-border: rgba(251, 146, 60, 0.3);
+            --theme-text: #fed7aa;
+            --theme-text-muted: #fb923c;
+            --theme-accent: #f97316;
+        }
+
+        /* Theme: Aurora */
+        [data-theme="aurora"] {
+            --theme-bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 30%, #134e4a 70%, #1e3a5f 100%);
+            --theme-card-bg: rgba(139, 92, 246, 0.1);
+            --theme-card-border: rgba(139, 92, 246, 0.3);
+            --theme-text: #c4b5fd;
+            --theme-text-muted: #a78bfa;
+            --theme-accent: #8b5cf6;
+        }
+
+        /* Theme: Warm */
+        [data-theme="warm"] {
+            --theme-bg: #1c1917;
+            --theme-card-bg: rgba(120, 113, 108, 0.15);
+            --theme-card-border: rgba(168, 162, 158, 0.3);
+            --theme-text: #e7e5e4;
+            --theme-text-muted: #a8a29e;
+            --theme-accent: #fbbf24;
+        }
+
         :root {
             --gemini-blue: #4796E3;
             --claude-orange: #DA7756;
             --white-glow: #ffffff;
             --dark-purple: #3b2a54;
-            --pure-black: #000000;
+            --pure-black: var(--theme-bg);
             --warm-dark: #262624;
         }
 
         body {
-            background: var(--pure-black);
+            background: var(--theme-bg);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
 
