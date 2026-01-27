@@ -551,7 +551,7 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8964';
+        const API_BASE = `${window.location.protocol}//${window.location.hostname}:8964`;
         const STORAGE_KEYS = {
             activeFlow: 'anti-api-active-flow',
             privacyMode: 'anti-api-privacy-mode',
