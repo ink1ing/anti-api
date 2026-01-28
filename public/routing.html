@@ -1695,6 +1695,124 @@
             if (e.data && e.data.type === 'theme-change') {
                 applyTheme(e.data.theme);
             }
+            // 🆕 监听语言变化
+            if (e.data && e.data.type === 'language-change') {
+                applyLanguage(e.data.lang);
+            }
+        });
+
+        // 🆕 多语言支持
+        const routingI18n = {
+            en: {
+                title: 'Routing',
+                subtitle: 'Build model chains with fallback on 429',
+                flowRouting: 'Flow Routing',
+                accountRouting: 'Account Routing',
+                accounts: 'ACCOUNTS',
+                accountsHint: 'Drag a model block into the flow.',
+                flow: 'FLOW',
+                flowHint: 'Match by model name in requests.',
+                saved: 'SAVED',
+                savedHint: 'Edit, rename, or delete saved flows.',
+                new: 'New',
+                save: 'Save',
+                models: 'MODELS',
+                modelsHint: 'Official model IDs only.',
+                accountChain: 'ACCOUNT CHAIN',
+                accountChainHint: 'Ordered provider/account fallback.',
+                smartSwitch: 'Smart Switch',
+                selectModel: 'Select a model',
+                noEntries: 'No entries yet.',
+                noFlows: 'No saved flows yet.',
+                noAccounts: 'No accounts yet. Add accounts from /quota.',
+                noModels: 'No official models available.',
+                hops: 'hops',
+                editing: 'Editing',
+                clickToEdit: 'Click to edit',
+                edit: 'Edit',
+                delete: 'Delete',
+                remove: 'Remove',
+                up: 'Up',
+                down: 'Down',
+                add: 'Add',
+                provider: 'Provider',
+                account: 'Account',
+                fallbackOn429: 'fallback on 429',
+                dropHere: 'Drop here',
+                disable: 'Disable',
+                enable: 'Enable',
+                disabled: 'DISABLED',
+                smartSwitchOn: 'Smart Switch on: auto entries expand by account order.',
+                smartSwitchOff: 'Smart Switch off: only explicit account order is used.',
+            },
+            zh: {
+                title: '路由',
+                subtitle: '构建 429 自动切换的模型链',
+                flowRouting: 'Flow 路由',
+                accountRouting: '账户路由',
+                accounts: '账户',
+                accountsHint: '拖拽模型块到流程中',
+                flow: '流程',
+                flowHint: '按请求中的模型名匹配',
+                saved: '已保存',
+                savedHint: '编辑、重命名或删除已保存的流程',
+                new: '新建',
+                save: '保存',
+                models: '模型',
+                modelsHint: '仅官方模型 ID',
+                accountChain: '账户链',
+                accountChainHint: '按顺序的供应商/账户回退',
+                smartSwitch: '智能切换',
+                selectModel: '选择一个模型',
+                noEntries: '暂无条目',
+                noFlows: '暂无已保存的流程',
+                noAccounts: '暂无账户，请从 /quota 添加',
+                noModels: '暂无可用的官方模型',
+                hops: '跳',
+                editing: '编辑中',
+                clickToEdit: '点击编辑',
+                edit: '编辑',
+                delete: '删除',
+                remove: '移除',
+                up: '上移',
+                down: '下移',
+                add: '添加',
+                provider: '供应商',
+                account: '账户',
+                fallbackOn429: '429 时回退',
+                dropHere: '拖放到这里',
+                disable: '禁用',
+                enable: '启用',
+                disabled: '已禁用',
+                smartSwitchOn: '智能切换开启：自动条目按账户顺序展开',
+                smartSwitchOff: '智能切换关闭：仅使用显式账户顺序',
+            }
+        };
+
+        let routingLang = localStorage.getItem('anti-api-language') || 'en';
+
+        function rt(key) {
+            return routingI18n[routingLang]?.[key] || routingI18n.en[key] || key;
+        }
+
+        function applyLanguage(lang) {
+            routingLang = lang || 'en';
+            // 重新渲染以应用新语言
+            renderAccounts();
+            renderFlow();
+            renderSavedFlows();
+            renderAccountRouting();
+        }
+
+        // 初始化语言
+        const initLang = localStorage.getItem('anti-api-language') || 'en';
+        routingLang = initLang;
+
+        // 监听 storage 变化（跨页面同步语言）
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'anti-api-language') {
+                applyLanguage(e.newValue || 'en');
+            }
         });
     </script>
 </body>

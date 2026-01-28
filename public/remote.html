@@ -251,7 +251,7 @@
         /* Iframe embed mode styles - match parent page background */
         body.iframe-mode {
             padding: 0 !important;
-            background: #000000 !important;
+            background: var(--theme-bg) !important;
         }
 
         body.iframe-mode .main-container {
@@ -535,6 +535,90 @@
         window.addEventListener('message', (e) => {
             if (e.data && e.data.type === 'theme-change') {
                 applyTheme(e.data.theme);
+            }
+            // 🆕 监听语言变化
+            if (e.data && e.data.type === 'language-change') {
+                applyLanguage(e.data.lang);
+            }
+        });
+
+        // 🆕 多语言支持
+        const i18n = {
+            en: {
+                title: 'Remote',
+                subtitle: 'Expose anti-api to external devices via ngrok tunnel',
+                placeholder: 'Enter ngrok authtoken',
+                getToken: 'Get Token →',
+                start: 'Start',
+                stop: 'Stop',
+                notConnected: 'Not connected',
+                connected: 'Connected',
+                starting: 'Starting...',
+                clickToCopy: 'Click to copy URL:',
+                urlCopied: 'URL copied to clipboard',
+                copyFailed: 'Copy failed',
+                noUrl: 'No URL to copy',
+                ngrokStarted: 'ngrok started successfully',
+                ngrokStopped: 'ngrok stopped',
+                waitingUrl: 'Starting, waiting for URL...',
+            },
+            zh: {
+                title: '远程',
+                subtitle: '通过 ngrok 隧道将 anti-api 暴露给外部设备',
+                placeholder: '输入 ngrok authtoken',
+                getToken: '获取 Token →',
+                start: '启动',
+                stop: '停止',
+                notConnected: '未连接',
+                connected: '已连接',
+                starting: '启动中...',
+                clickToCopy: '点击复制 URL：',
+                urlCopied: 'URL 已复制到剪贴板',
+                copyFailed: '复制失败',
+                noUrl: '没有可复制的 URL',
+                ngrokStarted: 'ngrok 启动成功',
+                ngrokStopped: 'ngrok 已停止',
+                waitingUrl: '启动中，等待 URL...',
+            }
+        };
+
+        let currentLang = localStorage.getItem('anti-api-language') || 'en';
+
+        function t(key) {
+            return i18n[currentLang]?.[key] || i18n.en[key] || key;
+        }
+
+        function applyLanguage(lang) {
+            currentLang = lang || 'en';
+            // 更新页面文本
+            document.querySelector('.remote-header h1').textContent = t('title');
+            document.querySelector('.remote-header p').textContent = t('subtitle');
+            document.getElementById('ngrok-authtoken').placeholder = t('placeholder');
+            document.querySelector('a[href*="ngrok"]').textContent = t('getToken');
+
+            // 更新按钮和状态文本
+            const toggleBtn = document.getElementById('ngrok-toggle');
+            const statusText = document.getElementById('ngrok-status-text');
+            if (isRunning) {
+                toggleBtn.textContent = t('stop');
+                statusText.textContent = t('connected');
+            } else {
+                toggleBtn.textContent = t('start');
+                statusText.textContent = t('notConnected');
+            }
+
+            // 更新 URL 提示
+            const urlHint = document.querySelector('#ngrok-url-container > div:first-child');
+            if (urlHint) urlHint.textContent = t('clickToCopy');
+        }
+
+        // 初始化语言
+        applyLanguage(currentLang);
+
+        // 监听 storage 变化（跨页面同步语言）
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'anti-api-language') {
+                applyLanguage(e.newValue || 'en');
             }
         });
     </script>

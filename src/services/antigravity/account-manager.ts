@@ -732,51 +732,9 @@ class AccountManager {
             }
         }
 
-        // 所有账号都被限流 - 找等待时间最短的
-        const allAccounts = Array.from(this.accounts.values())
-        let bestAccount = allAccounts[0]
-        let minWaitMs: number | null = null
-        for (const acc of allAccounts) {
-            if (!acc.rateLimitedUntil) {
-                bestAccount = acc
-                minWaitMs = 0
-                break
-            }
-            const waitMs = Math.max(acc.rateLimitedUntil - now, 0)
-            if (minWaitMs === null || waitMs < minWaitMs) {
-                minWaitMs = waitMs
-                bestAccount = acc
-            }
-        }
-
-        if (minWaitMs !== null && minWaitMs <= 2000) {
-            // 🔄 乐观重置：等待时间很短时，清除所有限流记录
-            consola.warn(`All accounts rate limited, waiting ${Math.ceil(minWaitMs / 1000)}s for sync...`)
-            await new Promise(resolve => setTimeout(resolve, 500))
-            const refreshed = allAccounts.find(acc => !acc.rateLimitedUntil || acc.rateLimitedUntil <= Date.now())
-            if (refreshed) {
-                return {
-                    accessToken: refreshed.accessToken,
-                    projectId: refreshed.projectId || "unknown",
-                    email: refreshed.email,
-                    accountId: refreshed.id,
-                }
-            }
-            // 乐观重置：清除所有限流记录
-            consola.warn(`🔄 Optimistic reset: Clearing all ${allAccounts.length} rate limit record(s)`)
-            for (const acc of allAccounts) {
-                acc.rateLimitedUntil = null
-                acc.consecutiveFailures = 0
-            }
-            return {
-                accessToken: bestAccount.accessToken,
-                projectId: bestAccount.projectId || "unknown",
-                email: bestAccount.email,
-                accountId: bestAccount.id,
-            }
-        }
-
-        consola.warn(`All accounts rate limited, min wait ${Math.ceil(minWaitMs || 0 / 1000)}s`)
+        // 所有账号都被跳过（禁用/配额不足/限流）
+        // 🆕 修复：不再 fallback 到被禁用或配额不足的账户，直接返回 null
+        console.log(`[AccountManager] ❌ No available accounts (all disabled, insufficient quota, or rate limited)`)
         return null
     }
 
