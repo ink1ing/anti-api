@@ -611,6 +611,9 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
     const accountState = getAccountStickyState(request.model, entries.length)
     const startIndex = accountState?.cursor ?? 0
 
+    // 🐛 修复：添加配额检查（与 shouldSkipFlowEntry 相同逻辑）
+    const reservePercent = getSetting("quotaReservePercent") || 0
+
     for (let offset = 0; offset < entries.length; offset++) {
         const index = (startIndex + offset) % entries.length
         const entry = entries[index]
@@ -622,6 +625,16 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 const isLimited = accountManager.isAccountRateLimited(entry.accountId) || isRouterRateLimited("antigravity", entry.accountId)
                 if (isLimited) continue
                 if (entries.length > 1 && accountManager.isAccountInFlight(entry.accountId)) continue
+
+                // 🐛 修复：检查配额（使用请求的模型名，而非 entry.modelId）
+                if (entries.length > 1) {
+                    const quotaPercent = getAccountModelQuotaPercent("antigravity", entry.accountId, request.model)
+                    if (quotaPercent !== null && quotaPercent <= reservePercent) {
+                        console.log(`[Router] Skipping ${entry.accountId}: ${request.model} quota ${quotaPercent}% <= reserve ${reservePercent}%`)
+                        continue
+                    }
+                }
+
                 const accountDisplay = getAccountDisplay("antigravity", entry.accountId)
                 setRequestLogContext({ model: request.model, provider: "antigravity", account: accountDisplay })
                 const result = await createChatCompletionWithOptions({ ...request, model: request.model }, {
@@ -924,6 +937,9 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
     const accountState = getAccountStickyState(request.model, entries.length)
     const startIndex = accountState?.cursor ?? 0
 
+    // 🐛 修复：添加配额检查（与 shouldSkipFlowEntry 相同逻辑）
+    const reservePercent = getSetting("quotaReservePercent") || 0
+
     for (let offset = 0; offset < entries.length; offset++) {
         const index = (startIndex + offset) % entries.length
         const entry = entries[index]
@@ -935,6 +951,16 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 const isLimited = accountManager.isAccountRateLimited(entry.accountId) || isRouterRateLimited("antigravity", entry.accountId)
                 if (isLimited) continue
                 if (entries.length > 1 && accountManager.isAccountInFlight(entry.accountId)) continue
+
+                // 🐛 修复：检查配额（使用请求的模型名，而非 entry.modelId）
+                if (entries.length > 1) {
+                    const quotaPercent = getAccountModelQuotaPercent("antigravity", entry.accountId, request.model)
+                    if (quotaPercent !== null && quotaPercent <= reservePercent) {
+                        console.log(`[Router] Skipping ${entry.accountId}: ${request.model} quota ${quotaPercent}% <= reserve ${reservePercent}%`)
+                        continue
+                    }
+                }
+
                 yield* createChatCompletionStreamWithOptions({ ...request, model: request.model }, {
                     accountId: entry.accountId,
                     allowRotation: false,
