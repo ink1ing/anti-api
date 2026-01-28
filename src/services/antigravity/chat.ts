@@ -960,7 +960,8 @@ export async function createChatCompletionWithOptions(
         projectId = account.projectId
         accountEmail = account.email
     } else {
-        const account = await accountManager.getNextAvailableAccount(false, modelName)
+        // 🐛 修复：使用 request.model 而非未定义的 modelName
+        const account = await accountManager.getNextAvailableAccount(false, request.model)
         if (account) {
             accessToken = account.accessToken
             accountId = account.accountId
@@ -1043,7 +1044,8 @@ export async function* createChatCompletionStreamWithOptions(
         projectId = account.projectId
         accountEmail = account.email
     } else {
-        const account = await accountManager.getNextAvailableAccount(false, modelName)
+        // 🐛 修复：使用 request.model 而非未定义的 modelName
+        const account = await accountManager.getNextAvailableAccount(false, request.model)
         if (account) {
             accessToken = account.accessToken
             accountId = account.accountId
