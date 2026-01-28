@@ -359,14 +359,16 @@ function shouldSkipFlowEntry(
     const ignoreRateLimit = options.ignoreRateLimit ?? false
     const ignoreQuotaReserve = options.ignoreQuotaReserve ?? false
 
-    // 检查配额保留设置（只在有多个条目时生效）
+    // 🐛 修复：检查配额是否为 0%（无论 reservePercent 设置如何）
+    // 以及检查配额保留设置（只在有多个条目时生效）
     if (!ignoreQuotaReserve && entriesLength > 1) {
-        const reservePercent = getSetting("quotaReservePercent")
-        if (reservePercent > 0) {
-            const quotaPercent = getAccountModelQuotaPercent(entry.provider, entry.accountId, entry.modelId)
-            if (quotaPercent !== null && quotaPercent <= reservePercent) {
-                return true // 配额低于保留阈值，跳过此账户
-            }
+        const reservePercent = getSetting("quotaReservePercent") || 0
+        const quotaPercent = getAccountModelQuotaPercent(entry.provider, entry.accountId, entry.modelId)
+        // 如果配额低于或等于保留阈值，跳过此账户
+        // 当 reservePercent = 0 时，只有 quotaPercent = 0% 才会被跳过
+        if (quotaPercent !== null && quotaPercent <= reservePercent) {
+            console.log(`[Router] Skipping ${entry.accountId}: ${entry.modelId} quota ${quotaPercent}% <= reserve ${reservePercent}%`)
+            return true
         }
     }
 
