@@ -15,6 +15,7 @@ import type { AuthProvider } from "~/services/auth/types"
 import { recordUsage } from "~/services/usage-tracker"
 import { getAccountModelQuotaPercent } from "~/services/quota-aggregator"
 import { getSetting } from "~/services/settings"
+import { normalizeModelName } from "./model-aliases"
 
 export class RoutingError extends Error {
     status: number
@@ -785,13 +786,20 @@ export async function createRoutedCompletion(request: RoutedRequest) {
     }
 
     const config = loadRoutingConfig()
-    if (isOfficialModel(request.model)) {
-        const accountEntries = resolveAccountEntries(config, request.model)
-        return createAccountCompletionWithEntries(request, accountEntries)
+    const normalizedModel = normalizeModelName(request.model)
+
+    // Debug logging for model normalization
+    if (normalizedModel !== request.model) {
+        console.log(`[Router] Model normalized: ${request.model} → ${normalizedModel}`)
     }
 
-    const flowSelection = resolveFlowSelection(config, request.model)
-    return createFlowCompletionWithEntries(request, flowSelection.entries, flowSelection.flowKey)
+    if (isOfficialModel(normalizedModel)) {
+        const accountEntries = resolveAccountEntries(config, normalizedModel)
+        return createAccountCompletionWithEntries({ ...request, model: normalizedModel }, accountEntries)
+    }
+
+    const flowSelection = resolveFlowSelection(config, normalizedModel)
+    return createFlowCompletionWithEntries({ ...request, model: normalizedModel }, flowSelection.entries, flowSelection.flowKey)
 }
 
 async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, entries: RoutingEntry[], flowKey?: string): AsyncGenerator<string, void, unknown> {
@@ -1173,13 +1181,19 @@ export async function* createRoutedCompletionStream(request: RoutedRequest): Asy
     }
 
     const config = loadRoutingConfig()
+    const normalizedModel = normalizeModelName(request.model)
 
-    if (isOfficialModel(request.model)) {
-        const accountEntries = resolveAccountEntries(config, request.model)
-        yield* createAccountCompletionStreamWithEntries(request, accountEntries)
+    // Debug logging for model normalization
+    if (normalizedModel !== request.model) {
+        console.log(`[Router] Model normalized: ${request.model} → ${normalizedModel}`)
+    }
+
+    if (isOfficialModel(normalizedModel)) {
+        const accountEntries = resolveAccountEntries(config, normalizedModel)
+        yield* createAccountCompletionStreamWithEntries({ ...request, model: normalizedModel }, accountEntries)
         return
     }
 
-    const flowSelection = resolveFlowSelection(config, request.model)
-    yield* createFlowCompletionStreamWithEntries(request, flowSelection.entries, flowSelection.flowKey)
+    const flowSelection = resolveFlowSelection(config, normalizedModel)
+    yield* createFlowCompletionStreamWithEntries({ ...request, model: normalizedModel }, flowSelection.entries, flowSelection.flowKey)
 }
