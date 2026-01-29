@@ -16,6 +16,7 @@ import { recordUsage } from "~/services/usage-tracker"
 import { getAccountModelQuotaPercent } from "~/services/quota-aggregator"
 import { getSetting } from "~/services/settings"
 import { normalizeModelName } from "./model-aliases"
+import { accountSelector } from "~/services/account-selector"
 
 export class RoutingError extends Error {
     status: number
@@ -59,8 +60,6 @@ function isEntryUsable(entry: RoutingEntry): boolean {
     return !!authStore.getAccount(entry.provider, entry.accountId)
 }
 
-// 🆕 Router 级别的 rate-limit 状态（独立于 accountManager）
-const routerRateLimits = new Map<string, number>()  // "provider:accountId" -> expiry timestamp
 // 🆕 Router 级别的配额缓存（5秒 TTL，减少配额检查开销）
 const routerQuotaCache = new Map<string, { percent: number | null; expiry: number }>()
 const ROUTER_QUOTA_CACHE_TTL = 5000 // 5秒
@@ -72,26 +71,6 @@ const PROVIDER_ORDER: AuthProvider[] = ["antigravity", "codex", "copilot"]
 let officialModelIndex: Map<string, Set<AuthProvider>> | null = null
 const flowStickyStates = new Map<string, FlowStickyState>()
 const accountStickyStates = new Map<string, AccountStickyState>()
-
-function getRouterRateLimitKey(provider: string, accountId: string): string {
-    return `${provider}:${accountId}`
-}
-
-function isRouterRateLimited(provider: string, accountId: string): boolean {
-    const key = getRouterRateLimitKey(provider, accountId)
-    const expiry = routerRateLimits.get(key)
-    if (!expiry) return false
-    if (Date.now() > expiry) {
-        routerRateLimits.delete(key)
-        return false
-    }
-    return true
-}
-
-function markRouterRateLimited(provider: string, accountId: string, durationMs: number = 30000): void {
-    const key = getRouterRateLimitKey(provider, accountId)
-    routerRateLimits.set(key, Date.now() + durationMs)
-}
 
 function getQuotaCachedPercent(provider: string, accountId: string, model: string): number | null {
     const key = `${provider}:${accountId}:${model}`
@@ -429,9 +408,9 @@ function shouldSkipFlowEntry(
     if (entry.provider === "antigravity") {
         const accountId = entry.accountId === "auto" ? undefined : entry.accountId
         if (!ignoreRateLimit && accountId && entriesLength > 1) {
-            const isLimited = accountManager.isAccountRateLimited(accountId) || isRouterRateLimited("antigravity", accountId)
-            if (isLimited) return true
-            if (accountManager.isAccountInFlight(accountId)) return true
+            // Use unified accountSelector for rate limit check
+            if (accountSelector.isRateLimited(entry.provider, accountId)) return true
+            if (accountSelector.isInFlight(entry.provider, accountId)) return true
         }
         return false
     }
@@ -446,21 +425,27 @@ function shouldSkipFlowEntry(
 
 function applyFlowRateLimit(entry: RoutingEntry, error: UpstreamError, requestModel: string): void {
     if (entry.provider === "antigravity" && entry.accountId !== "auto") {
-        accountManager
-            .markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, requestModel, { maxDurationMs: 30_000 })
-            .then((limit) => {
-                const duration = limit?.durationMs ?? 30_000
-                markRouterRateLimited("antigravity", entry.accountId, duration)
-            })
-            .catch(() => {
-                markRouterRateLimited("antigravity", entry.accountId, 30_000)
-            })
+        // Use unified accountSelector for rate limit marking
+        accountSelector.markRateLimitedFromError(
+            entry.provider,
+            entry.accountId,
+            error.status,
+            error.body || "",
+            error.retryAfter,
+            requestModel,
+            { maxDurationMs: 30_000 }
+        )
         return
     }
 
     if (entry.provider !== "antigravity") {
-        authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-        markRouterRateLimited(entry.provider, entry.accountId, 60000)
+        accountSelector.markRateLimitedFromError(
+            entry.provider,
+            entry.accountId,
+            error.status,
+            error.body || "",
+            error.retryAfter
+        )
     }
 }
 
@@ -683,9 +668,9 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                     continue
                 }
 
-                const isLimited = accountManager.isAccountRateLimited(entry.accountId) || isRouterRateLimited("antigravity", entry.accountId)
-                if (isLimited) continue
-                if (entries.length > 1 && accountManager.isAccountInFlight(entry.accountId)) continue
+                // Use unified accountSelector for rate limit check
+                if (accountSelector.isRateLimited(entry.provider, entry.accountId)) continue
+                if (entries.length > 1 && accountSelector.isInFlight(entry.provider, entry.accountId)) continue
 
                 // 🐛 修复：检查配额（使用请求的模型名，而非 entry.modelId）
                 // 🆕 移除 entries.length > 1 条件，单账户场景也需要检查配额
@@ -780,13 +765,15 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 continue
             }
             if (error instanceof UpstreamError && shouldFallbackOnUpstream(error)) {
-                if (entry.provider === "antigravity") {
-                    accountManager.markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, request.model)
-                    markRouterRateLimited("antigravity", entry.accountId, 60000)
-                } else {
-                    authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-                    markRouterRateLimited(entry.provider, entry.accountId, 60000)
-                }
+                // Use unified accountSelector for rate limit marking
+                accountSelector.markRateLimitedFromError(
+                    entry.provider,
+                    entry.accountId,
+                    error.status,
+                    error.body || "",
+                    error.retryAfter,
+                    request.model
+                )
                 advanceAccountCursor(accountState, entries.length, index)
                 continue
             }
@@ -1111,9 +1098,9 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                     continue
                 }
 
-                const isLimited = accountManager.isAccountRateLimited(entry.accountId) || isRouterRateLimited("antigravity", entry.accountId)
-                if (isLimited) continue
-                if (entries.length > 1 && accountManager.isAccountInFlight(entry.accountId)) continue
+                // Use unified accountSelector for rate limit check
+                if (accountSelector.isRateLimited(entry.provider, entry.accountId)) continue
+                if (entries.length > 1 && accountSelector.isInFlight(entry.provider, entry.accountId)) continue
 
                 // 🐛 修复：检查配额（使用请求的模型名，而非 entry.modelId）
                 // 🆕 移除 entries.length > 1 条件，单账户场景也需要检查配额
@@ -1207,13 +1194,15 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 continue
             }
             if (error instanceof UpstreamError && shouldFallbackOnUpstream(error)) {
-                if (entry.provider === "antigravity") {
-                    accountManager.markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, request.model)
-                    markRouterRateLimited("antigravity", entry.accountId, 60000)
-                } else {
-                    authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-                    markRouterRateLimited(entry.provider, entry.accountId, 60000)
-                }
+                // Use unified accountSelector for rate limit marking
+                accountSelector.markRateLimitedFromError(
+                    entry.provider,
+                    entry.accountId,
+                    error.status,
+                    error.body || "",
+                    error.retryAfter,
+                    request.model
+                )
                 advanceAccountCursor(accountState, entries.length, index)
                 continue
             }
