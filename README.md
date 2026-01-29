@@ -252,13 +252,44 @@ Configure application behavior at `http://localhost:8964/settings`:
 ### Antigravity
 | Model ID | Description |
 |----------|-------------|
+| **Claude 4.5 Series** | |
+| `claude-opus-4-5-thinking` | Most capable, extended reasoning |
 | `claude-sonnet-4-5` | Fast, balanced |
 | `claude-sonnet-4-5-thinking` | Extended reasoning |
-| `claude-opus-4-5-thinking` | Most capable |
-| `gemini-3-flash` | Fastest responses |
+| `claude-haiku-4-5` | Fastest Claude |
+| `claude-haiku-4-5-thinking` | Fast with reasoning |
+| **Claude 4 Series** | |
+| `claude-opus-4` | Opus 4 base |
+| `claude-opus-4-thinking` | Opus 4 with reasoning |
+| `claude-sonnet-4` | Sonnet 4 base |
+| `claude-sonnet-4-thinking` | Sonnet 4 with reasoning |
+| **Gemini 3 Series** | |
 | `gemini-3-pro-high` | High quality |
 | `gemini-3-pro-low` | Cost-effective |
-| `gpt-oss-120b` | Open source |
+| `gemini-3-pro` | Balanced |
+| `gemini-3-flash` | Fastest responses |
+| `gemini-3-pro-image` | Image generation (supports resolution and aspect ratio suffixes) |
+
+**Image Generation Model Variants (21 combinations):**
+| Base | 2K Resolution | 4K Resolution |
+|------|---------------|---------------|
+| `gemini-3-pro-image` | `gemini-3-pro-image-2k` | `gemini-3-pro-image-4k` |
+| `gemini-3-pro-image-1x1` | `gemini-3-pro-image-2k-1x1` | `gemini-3-pro-image-4k-1x1` |
+| `gemini-3-pro-image-4x3` | `gemini-3-pro-image-2k-4x3` | `gemini-3-pro-image-4k-4x3` |
+| `gemini-3-pro-image-3x4` | `gemini-3-pro-image-2k-3x4` | `gemini-3-pro-image-4k-3x4` |
+| `gemini-3-pro-image-16x9` | `gemini-3-pro-image-2k-16x9` | `gemini-3-pro-image-4k-16x9` |
+| `gemini-3-pro-image-9x16` | `gemini-3-pro-image-2k-9x16` | `gemini-3-pro-image-4k-9x16` |
+| `gemini-3-pro-image-21x9` | `gemini-3-pro-image-2k-21x9` | `gemini-3-pro-image-4k-21x9` |
+
+| **Gemini 2.5 Series** | |
+| `gemini-2.5-pro` | Pro 2.5 |
+| `gemini-2.5-flash` | Flash 2.5 |
+| `gemini-2.5-flash-thinking` | Flash with reasoning |
+| `gemini-2.5-flash-lite` | Lightweight Flash |
+| **Gemini 2.0 Series** | |
+| `gemini-2.0-flash-exp` | Experimental Flash |
+| **Other** | |
+| `gpt-oss-120b` | Open source 120B |
 
 ### GitHub Copilot
 | Model ID | Description |
@@ -319,14 +350,12 @@ MIT
 
 > **免责声明**：本项目基于 Antigravity 逆向开发，未来版本兼容性未知，长久使用请尽可能避免更新Antigravity。
 
-## 更新内容 (v2.4.0)
+## 更新内容 (v2.5.0)
 
-- ✅ **流式优化** - 优化流式读取，减少意外中断
-- ✅ **Docker 支持** - 完善 Docker 部署，提供一键启动脚本
-- ✅ **日志面板** - 面板内实时查看服务器日志
-- ✅ **UI 布局优化** - 配额卡片布局优化，隐私遮罩改进
-- ✅ **一键启动脚本** - `start.command` (macOS) / `start.bat` (Windows) 本地启动
-- ✅ **Docker 脚本** - `dstart.command` / `dstart.bat` Docker 启动
+- ✅ **配额保留功能** - 设置配额保留百分比，账户配额低于阈值时自动切换下一个账户，避免榨干所有账户
+- ✅ **Docker 部署优化** - 修复 Docker 环境下 OAuth 登录问题，支持非阻塞式授权流程
+- ✅ **日志系统改进** - 支持 `ANTI_API_VERBOSE` 环境变量，默认显示 info 级别日志
+- ✅ **前端兼容性修复** - 修复 HTTP 环境下 UUID 生成问题，修复远程访问时 API 地址问题
 
 ## 特性
 
@@ -336,6 +365,108 @@ MIT
 - **🔄 自动轮换** - 429 错误时无缝切换账号
 - **⚡ 双格式支持** - OpenAI 和 Anthropic API 兼容
 - **🛠️ 工具调用** - 支持 function calling，兼容 Claude Code
+- **🔋 配额保留** - 设置保留百分比，避免用尽所有账户配额
+
+## Docker 部署（推荐）
+
+### docker-compose.yml 配置示例
+
+```yaml
+services:
+  anti-api:
+    image: ghcr.io/your-username/anti-api:latest
+    container_name: anti-api
+    restart: unless-stopped
+    ports:
+      - "8964:8964"
+      - "51121:51121"
+    environment:
+      HOME: /app/data
+      ANTI_API_VERBOSE: "1"
+      ANTI_API_OAUTH_NO_OPEN: "1"
+      ANTI_API_NO_OPEN: "1"
+      TZ: Asia/Shanghai
+      # 如需代理访问 Google API，添加以下配置
+      HTTP_PROXY: "http://your-proxy:7890"
+      HTTPS_PROXY: "http://your-proxy:7890"
+      NO_PROXY: "localhost,127.0.0.1,192.168.0.0/16"
+    volumes:
+      - ./anti-api/data:/app/data
+```
+
+### 首次使用 - Windows 端口转发配置
+
+由于 Google OAuth 只允许 `localhost` 作为回调地址，Docker 部署时需要在 Windows 上设置端口转发：
+
+```powershell
+# 添加端口转发（管理员权限运行 PowerShell）
+netsh interface portproxy add v4tov4 listenport=51121 connectaddress=192.168.1.15 connectport=51121 listenaddress=127.0.0.1
+
+# 查看当前端口转发规则
+netsh interface portproxy show all
+
+# 删除端口转发（不再需要时）
+netsh interface portproxy delete v4tov4 listenport=51121 listenaddress=127.0.0.1
+```
+
+> **注意**：将 `192.168.1.15` 替换为你的 Docker 服务器 IP 地址。
+
+### 启动容器
+
+```bash
+docker compose pull anti-api && docker compose up -d anti-api
+```
+
+### 添加账户
+
+1. 访问 `http://你的服务器IP:8964/quota`
+2. 点击 "Add" → 选择 "Antigravity"
+3. 浏览器会自动打开 Google 登录页面
+4. 完成登录后，页面会自动检测并显示账户信息
+
+## 配额保留功能
+
+避免把所有账户的配额都榨干，保留一定百分比用于紧急情况。
+
+### 配置方法
+
+1. 访问 `http://你的服务器IP:8964/quota`
+2. 切换到 **Settings** 标签页
+3. 找到 **Quota Reserve** 设置
+4. 输入保留百分比（推荐 5-10%）
+5. 点击 **Save** 保存
+
+### 工作原理
+
+- 设置为 `5%`：当账户配额降到 5% 或以下时，跳过该账户使用下一个
+- 设置为 `0%`：禁用此功能，用尽才切换（默认）
+- **只在有多个账户时生效**
+
+### 智能匹配
+
+系统会根据请求的模型类型匹配对应的配额：
+- Claude/GPT 模型 → 检查 `claude_gpt` 配额
+- Gemini Pro 模型 → 检查 `gpro` 配额
+- Gemini Flash 模型 → 检查 `gflash` 配额
+
+## 路由系统说明
+
+### Account Routing（账户路由）
+
+用于**官方模型**（如 `claude-sonnet-4-5`）配置使用哪些账户：
+
+- 当请求官方模型时，系统会根据配置的账户列表**轮换使用**
+- 如果一个账户配额用完或达到保留阈值，自动切换到下一个
+- 开启 "Smart Switch" 后，系统会自动使用所有可用账户
+
+### Flow Routing（流路由）
+
+用于创建**自定义模型名称**的路由规则：
+
+- 创建一个 Flow 叫 `my-smart-model`
+- 在里面配置多个实际模型（如先用 Antigravity 的 Claude，失败了就切换到 Copilot）
+- 在客户端使用 `route:my-smart-model` 作为模型名
+- 系统会按顺序尝试，第一个失败就用下一个
 
 ## 开发规范
 
@@ -359,6 +490,7 @@ MIT
 │  │  • Flow 路由（自定义模型 ID）                         │  │
 │  │  • Account 路由（官方模型 ID）                        │  │
 │  │  • 429 错误自动轮换                                   │  │
+│  │  • 配额保留自动切换                                   │  │
 │  │  • 多提供商支持                                       │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                           ▼                                  │
@@ -367,45 +499,6 @@ MIT
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
 └─────────────────────────────────────────────────────────────┘
 ```
-
-## 智能路由系统 (Beta)
-
-> ⚠️ **测试功能**：路由系统为实验性功能，配置格式可能在未来版本中变更。
-
-路由系统拆分为两种模式：
-
-- **Flow 路由**：自定义模型 ID（如 `route:fast`）使用流配置
-- **Account 路由**：官方模型 ID（如 `claude-sonnet-4-5`）使用账号链
-
-由此实现模型到账号的精细控制：
-
-- **负载均衡** - 将请求分发到多个账号
-- **模型专用** - 指定模型使用专用账号
-- **混合提供商** - 组合 Antigravity、Codex、Copilot
-- **自动降级** - 账号触发 429 时自动切换下一个
-
-### 工作流程
-
-```
-请求
-  ├─ 官方模型 → Account 路由 → 账号链 → 提供商 → 上游 API
-  └─ 自定义模型/route:flow → Flow 路由 → 流条目 → 提供商 → 上游 API
-
-无匹配 → 400 错误
-```
-
-### 配置方法
-
-1. **访问面板**: `http://localhost:8964/routing`
-2. **Flow 路由**: 创建流（如 "fast", "opus"），添加 提供商 → 账号 → 模型 条目
-3. **Account 路由**: 选择官方模型，配置账号顺序，按需开启 Smart Switch
-4. **使用流**: 设置 `"model": "route:<流名称>"` 或直接使用流名
-5. **使用官方模型**: 直接请求官方模型 ID（如 `claude-sonnet-4-5`）
-
-**Flow 顺序**：按配置顺序尝试，429 时切换下一个。
-**Account 路由**：Smart Switch 开启且未配置条目时，按账号创建顺序自动展开。
-
----
 
 ## 远程访问
 
@@ -434,40 +527,88 @@ MIT
 
 ## 设置面板
 
-访问 `http://localhost:8964/settings` 配置：
+访问 `http://你的服务器IP:8964/quota` → Settings 标签页：
 
-- **自动打开面板**: 启动时打开配额面板
-- **自动启动 ngrok**: 自动启动隧道
-- **模型偏好**: 设置后台任务默认模型
+| 设置项 | 说明 |
+|--------|------|
+| Preload Routing | 后台预加载路由页面 |
+| Auto Start ngrok | 启动时自动开启隧道 |
+| Auto Open Dashboard | 启动时打开浏览器 |
+| Auto Refresh Quota | 每 10 分钟自动刷新配额 |
+| Privacy Protection | 遮罩邮箱和用户名 |
+| Compact Layout | 紧凑布局模式 |
+| Track Token Usage | 统计 Token 使用量 |
+| Capture Logs | 捕获日志到面板 |
+| Optimize Quota Sorting | 按剩余配额排序账户 |
+| **Quota Reserve** | **配额保留百分比（0-50%）** |
 
 ## 支持的模型
 
 ### Antigravity
 | 模型 ID | 说明 |
 |---------|------|
+| **Claude 4.5 系列** | |
+| `claude-opus-4-5-thinking` | 最强能力，扩展推理 |
 | `claude-sonnet-4-5` | 快速均衡 |
 | `claude-sonnet-4-5-thinking` | 扩展推理 |
-| `claude-opus-4-5-thinking` | 最强能力 |
-| `gemini-3-flash` | 最快响应 |
+| `claude-haiku-4-5` | 最快的 Claude |
+| `claude-haiku-4-5-thinking` | 快速推理 |
+| **Claude 4 系列** | |
+| `claude-opus-4` | Opus 4 基础版 |
+| `claude-opus-4-thinking` | Opus 4 推理版 |
+| `claude-sonnet-4` | Sonnet 4 基础版 |
+| `claude-sonnet-4-thinking` | Sonnet 4 推理版 |
+| **Gemini 3 系列** | |
 | `gemini-3-pro-high` | 高质量 |
+| `gemini-3-pro-low` | 低配额消耗 |
+| `gemini-3-pro` | 均衡版 |
+| `gemini-3-flash` | 最快响应 |
+| `gemini-3-pro-image` | 图像生成 (支持分辨率和宽高比后缀) |
+
+**图像生成模型变体 (21种组合):**
+| 基础版 | 2K 分辨率 | 4K 分辨率 |
+|--------|-----------|-----------|
+| `gemini-3-pro-image` | `gemini-3-pro-image-2k` | `gemini-3-pro-image-4k` |
+| `gemini-3-pro-image-1x1` | `gemini-3-pro-image-2k-1x1` | `gemini-3-pro-image-4k-1x1` |
+| `gemini-3-pro-image-4x3` | `gemini-3-pro-image-2k-4x3` | `gemini-3-pro-image-4k-4x3` |
+| `gemini-3-pro-image-3x4` | `gemini-3-pro-image-2k-3x4` | `gemini-3-pro-image-4k-3x4` |
+| `gemini-3-pro-image-16x9` | `gemini-3-pro-image-2k-16x9` | `gemini-3-pro-image-4k-16x9` |
+| `gemini-3-pro-image-9x16` | `gemini-3-pro-image-2k-9x16` | `gemini-3-pro-image-4k-9x16` |
+| `gemini-3-pro-image-21x9` | `gemini-3-pro-image-2k-21x9` | `gemini-3-pro-image-4k-21x9` |
+
+| **Gemini 2.5 系列** | |
+| `gemini-2.5-pro` | Pro 2.5 |
+| `gemini-2.5-flash` | Flash 2.5 |
+| `gemini-2.5-flash-thinking` | Flash 推理版 |
+| `gemini-2.5-flash-lite` | 轻量版 Flash |
+| **Gemini 2.0 系列** | |
+| `gemini-2.0-flash-exp` | 实验版 Flash |
+| **其他** | |
+| `gpt-oss-120b` | 开源 120B 模型 |
 
 ### GitHub Copilot
 | 模型 ID | 说明 |
 |---------|------|
 | `claude-opus-4-5-thinking` | Opus |
 | `claude-sonnet-4-5` | Sonnet |
+| `claude-sonnet-4-5-thinking` | Sonnet Thinking |
 | `gpt-4o` | GPT-4o |
 | `gpt-4o-mini` | GPT-4o Mini |
 | `gpt-4.1` | GPT-4.1 |
+| `gpt-4.1-mini` | GPT-4.1 Mini |
 
 ### ChatGPT Codex
 | 模型 ID | 说明 |
 |---------|------|
-| `gpt-5.2-max-high` | 5.2 Max (High) |
-| `gpt-5.2-max` | 5.2 Max |
 | `gpt-5.2` | 5.2 |
+| `gpt-5.2-codex` | 5.2 Codex |
 | `gpt-5.1` | 5.1 |
+| `gpt-5.1-codex` | 5.1 Codex |
+| `gpt-5.1-codex-max` | 5.1 Codex Max |
+| `gpt-5.1-codex-mini` | 5.1 Codex Mini |
 | `gpt-5` | 5 |
+| `gpt-5-codex` | 5 Codex |
+| `gpt-5-codex-mini` | 5 Codex Mini |
 
 ## API 端点
 
@@ -475,19 +616,31 @@ MIT
 |------|------|
 | `POST /v1/chat/completions` | OpenAI Chat API |
 | `POST /v1/messages` | Anthropic Messages API |
+| `GET /v1/models` | 模型列表 |
 | `GET /quota` | 配额面板 |
 | `GET /routing` | 路由配置 |
-| `GET /settings` | 设置面板 |
+| `GET /settings` | 设置 API |
 | `GET /remote-panel` | 隧道控制 |
+| `GET /health` | 健康检查 |
 
-## 代码质量
+## 常见问题
 
-- ✅ **单元测试** - 核心逻辑完整测试
-- ✅ **输入验证** - 请求验证保障安全
-- ✅ **响应时间日志** - 性能监控
-- ✅ **常量集中管理** - 无魔法数字
+### Docker 环境下 OAuth 登录失败
 
-详细文档见 `docs/` 文件夹。
+确保：
+1. 已配置端口转发（见上文 Windows 端口转发配置）
+2. 容器已映射 51121 端口
+3. 如需访问 Google API，已配置 HTTP_PROXY
+
+### 看不到日志输出
+
+设置环境变量 `ANTI_API_VERBOSE=1` 或使用 `-v` 参数启动。
+
+### 配额保留不生效
+
+- 确保有多个账户（单账户不会被跳过）
+- 确保开启了 Auto Refresh Quota 以保持配额数据最新
+- 配额数据来自缓存，首次使用时可能为空
 
 ## 开源协议
 

@@ -40,6 +40,16 @@ const QUOTA_CACHE_FILE = join(QUOTA_CACHE_DIR, "quota-cache.json")
 let quotaCache = new Map<string, QuotaCacheEntry>()
 let cacheLoaded = false
 
+// 智能缓存：内存缓存有效期（毫秒）
+const MEMORY_CACHE_TTL_MS = 60_000  // 60秒内直接返回内存缓存
+let lastFetchTime = 0
+let lastFetchResult: { timestamp: string; accounts: AccountQuotaView[] } | null = null
+let isBackgroundRefreshing = false
+
+// 超时追踪
+const timeoutCounters = new Map<string, number>()  // "provider:accountId" -> 连续超时次数
+const TIMEOUT_WARN_THRESHOLD = 3  // 连续超时3次后警告
+
 function getCacheKey(provider: QuotaCacheEntry["provider"], accountId: string): string {
     return `${provider}:${accountId}`
 }
@@ -80,6 +90,83 @@ function getCachedBars(provider: QuotaCacheEntry["provider"], accountId: string)
     return cached?.bars || null
 }
 
+// 超时计数管理
+function recordTimeout(provider: string, accountId: string): void {
+    const key = getCacheKey(provider as any, accountId)
+    const count = (timeoutCounters.get(key) || 0) + 1
+    timeoutCounters.set(key, count)
+
+    if (count === TIMEOUT_WARN_THRESHOLD) {
+        console.log(`\x1b[33m[Quota] ⚠️ WARNING: ${provider}/${accountId} timed out ${count} times consecutively. Check your network/proxy settings.\x1b[0m`)
+    } else if (count > TIMEOUT_WARN_THRESHOLD && count % 5 === 0) {
+        console.log(`\x1b[33m[Quota] ⚠️ ${provider}/${accountId} timeout count: ${count}\x1b[0m`)
+    }
+}
+
+function clearTimeoutCounter(provider: string, accountId: string): void {
+    const key = getCacheKey(provider as any, accountId)
+    if (timeoutCounters.has(key)) {
+        timeoutCounters.delete(key)
+    }
+}
+
+function isTimeoutError(error: unknown): boolean {
+    if (!error) return false
+    const message = String((error as { message?: string }).message || "")
+    return message.includes("timed out") ||
+           message.includes("timeout") ||
+           message.includes("ETIMEDOUT") ||
+           message.includes("ECONNRESET") ||
+           message.includes("ENOTFOUND")
+}
+
+/**
+ * 获取账户的最低配额百分比（用于路由决策）
+ * 返回该账户所有配额条中的最小值
+ */
+export function getAccountMinQuotaPercent(provider: "antigravity" | "codex" | "copilot", accountId: string): number | null {
+    loadQuotaCache()
+    const bars = getCachedBars(provider, accountId)
+    if (!bars || bars.length === 0) return null
+    return Math.min(...bars.map(bar => bar.percentage))
+}
+
+/**
+ * 获取账户特定模型的配额百分比
+ */
+export function getAccountModelQuotaPercent(provider: "antigravity" | "codex" | "copilot", accountId: string, modelId: string): number | null {
+    loadQuotaCache()
+    const bars = getCachedBars(provider, accountId)
+    if (!bars || bars.length === 0) return null
+
+    // 根据模型类型匹配对应的配额条
+    if (provider === "antigravity") {
+        // Claude/GPT 模型使用 claude_gpt 配额
+        if (modelId.includes("claude") || modelId.includes("gpt")) {
+            const bar = bars.find(b => b.key === "claude_gpt")
+            if (bar) return bar.percentage
+        }
+        // Gemini Image 模型使用 gimage 配额（优先检查，避免被 pro 匹配）
+        if (modelId.includes("image")) {
+            const bar = bars.find(b => b.key === "gimage")
+            if (bar) return bar.percentage
+        }
+        // Gemini Pro 模型使用 gpro 配额
+        if (modelId.includes("gemini") && modelId.includes("pro")) {
+            const bar = bars.find(b => b.key === "gpro")
+            if (bar) return bar.percentage
+        }
+        // Gemini Flash 模型使用 gflash 配额
+        if (modelId.includes("gemini") && modelId.includes("flash")) {
+            const bar = bars.find(b => b.key === "gflash")
+            if (bar) return bar.percentage
+        }
+    }
+
+    // 其他情况返回最低配额
+    return Math.min(...bars.map(bar => bar.percentage))
+}
+
 export async function getAggregatedQuota(): Promise<{
     timestamp: string
     accounts: AccountQuotaView[]
@@ -87,6 +174,63 @@ export async function getAggregatedQuota(): Promise<{
     loadQuotaCache()
     accountManager.load()
 
+    const now = Date.now()
+
+    // 智能缓存：60秒内直接返回内存缓存
+    if (lastFetchResult && (now - lastFetchTime) < MEMORY_CACHE_TTL_MS) {
+        return lastFetchResult
+    }
+
+    // 如果有磁盘缓存且正在后台刷新，直接返回磁盘缓存
+    if (isBackgroundRefreshing && quotaCache.size > 0) {
+        return buildResultFromCache()
+    }
+
+    // 如果有磁盘缓存，先返回缓存，然后后台刷新
+    if (quotaCache.size > 0 && !lastFetchResult) {
+        const cachedResult = buildResultFromCache()
+        // 后台刷新（不阻塞）
+        refreshQuotasInBackground()
+        return cachedResult
+    }
+
+    // 没有缓存，必须等待实际请求
+    return await fetchAndCacheQuotas()
+}
+
+function buildResultFromCache(): { timestamp: string; accounts: AccountQuotaView[] } {
+    const accounts: AccountQuotaView[] = []
+    for (const [, entry] of quotaCache.entries()) {
+        accounts.push({
+            provider: entry.provider,
+            accountId: entry.accountId,
+            displayName: entry.displayName,
+            bars: entry.bars,
+        })
+    }
+    return {
+        timestamp: new Date().toISOString(),
+        accounts,
+    }
+}
+
+async function refreshQuotasInBackground(): Promise<void> {
+    if (isBackgroundRefreshing) return
+    isBackgroundRefreshing = true
+
+    try {
+        await fetchAndCacheQuotas()
+    } catch (error) {
+        consola.debug("Background quota refresh failed:", error)
+    } finally {
+        isBackgroundRefreshing = false
+    }
+}
+
+async function fetchAndCacheQuotas(): Promise<{
+    timestamp: string
+    accounts: AccountQuotaView[]
+}> {
     const antigravityAccounts = authStore.listAccounts("antigravity")
     const codexAccounts = authStore.listAccounts("codex")
     const copilotAccounts = authStore.listAccounts("copilot")
@@ -98,10 +242,16 @@ export async function getAggregatedQuota(): Promise<{
     ])
     saveQuotaCache()
 
-    return {
+    const result = {
         timestamp: new Date().toISOString(),
         accounts: [...antigravity, ...codex, ...copilot],
     }
+
+    // 更新内存缓存
+    lastFetchTime = Date.now()
+    lastFetchResult = result
+
+    return result
 }
 
 async function fetchAntigravityQuotas(accounts: ProviderAccount[]): Promise<AccountQuotaView[]> {
@@ -122,6 +272,8 @@ async function fetchAntigravityQuotas(accounts: ProviderAccount[]): Promise<Acco
                     bars,
                     updatedAt: new Date().toISOString(),
                 })
+                // 成功后清除超时计数
+                clearTimeoutCounter("antigravity", account.id)
                 return {
                     provider: "antigravity" as const,
                     accountId: account.id,
@@ -130,6 +282,10 @@ async function fetchAntigravityQuotas(accounts: ProviderAccount[]): Promise<Acco
                 }
             } catch (error) {
                 lastError = error as Error
+                // 记录超时
+                if (isTimeoutError(error)) {
+                    recordTimeout("antigravity", account.id)
+                }
                 if (attempt < 1) {
                     // Wait 500ms before retry (reduced from 1000ms)
                     await new Promise(resolve => setTimeout(resolve, 500))
@@ -236,11 +392,13 @@ function buildAntigravityBars(models: Record<string, ModelInfo>): AccountBar[] {
     ]
     const gproIds = ["gemini-3-pro-low", "gemini-3-pro-high"]
     const gflashIds = ["gemini-3-flash"]
+    const gimageIds = ["gemini-3-pro-image"]
 
     return [
         buildMergedBar("claude_gpt", "claude&gpt", models, claudeGptIds),
         buildMergedBar("gpro", "gpro", models, gproIds),
         buildMergedBar("gflash", "gflash", models, gflashIds),
+        buildMergedBar("gimage", "gimage", models, gimageIds),
     ]
 }
 
@@ -285,6 +443,8 @@ async function fetchCodexQuotas(accounts: ProviderAccount[]): Promise<AccountQuo
                 bars: quota,
                 updatedAt: new Date().toISOString(),
             })
+            // 成功后清除超时计数
+            clearTimeoutCounter("codex", account.id)
             return {
                 provider: "codex" as const,
                 accountId: account.id,
@@ -292,6 +452,10 @@ async function fetchCodexQuotas(accounts: ProviderAccount[]): Promise<AccountQuo
                 bars: quota,
             }
         } catch (error) {
+            // 记录超时
+            if (isTimeoutError(error)) {
+                recordTimeout("codex", account.id)
+            }
             if (!isCertificateError(error)) {
                 consola.warn("Codex quota fetch failed:", error)
             }
@@ -378,6 +542,8 @@ async function fetchCopilotQuotas(accounts: ProviderAccount[]): Promise<AccountQ
                 bars: [bar],
                 updatedAt: new Date().toISOString(),
             })
+            // 成功后清除超时计数
+            clearTimeoutCounter("copilot", account.id)
             return {
                 provider: "copilot" as const,
                 accountId: account.id,
@@ -385,6 +551,10 @@ async function fetchCopilotQuotas(accounts: ProviderAccount[]): Promise<AccountQ
                 bars: [bar],
             }
         } catch (error) {
+            // 记录超时
+            if (isTimeoutError(error)) {
+                recordTimeout("copilot", account.id)
+            }
             consola.warn("Copilot quota fetch failed:", error)
             const cachedBars = getCachedBars("copilot", account.id)
             if (cachedBars) {

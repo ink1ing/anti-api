@@ -951,7 +951,12 @@ export async function createChatCompletionWithOptions(
     let releaseAccountLock: (() => void) | null = null
 
     if (options.accountId) {
-        const account = await accountManager.getAccountById(options.accountId)
+        // 🆕 检查账户是否被禁用
+        const { isAccountDisabled } = await import("~/services/routing/config")
+        if (isAccountDisabled("antigravity", options.accountId)) {
+            throw new UpstreamError("antigravity", 429, `Account disabled: ${options.accountId}`)
+        }
+        const account = await accountManager.getAccountById(options.accountId, request.model)
         if (!account) {
             throw new UpstreamError("antigravity", 429, `Account unavailable: ${options.accountId}`)
         }
@@ -960,16 +965,16 @@ export async function createChatCompletionWithOptions(
         projectId = account.projectId
         accountEmail = account.email
     } else {
-        const account = await accountManager.getNextAvailableAccount()
+        // 🐛 修复：使用 request.model 而非未定义的 modelName
+        const account = await accountManager.getNextAvailableAccount(false, request.model)
         if (account) {
             accessToken = account.accessToken
             accountId = account.accountId
             projectId = account.projectId
             accountEmail = account.email
         } else {
-            accessToken = await getAccessToken()
-            projectId = state.cloudaicompanionProject || undefined
-            accountEmail = state.userEmail || undefined
+            // 🆕 修复：不再 fallback 到 getAccessToken()，直接抛出错误
+            throw new UpstreamError("antigravity", 429, "No available accounts (all disabled, insufficient quota, or rate limited)")
         }
     }
 
@@ -1034,7 +1039,12 @@ export async function* createChatCompletionStreamWithOptions(
     let releaseAccountLock: (() => void) | null = null
 
     if (options.accountId) {
-        const account = await accountManager.getAccountById(options.accountId)
+        // 🆕 检查账户是否被禁用
+        const { isAccountDisabled } = await import("~/services/routing/config")
+        if (isAccountDisabled("antigravity", options.accountId)) {
+            throw new UpstreamError("antigravity", 429, `Account disabled: ${options.accountId}`)
+        }
+        const account = await accountManager.getAccountById(options.accountId, request.model)
         if (!account) {
             throw new UpstreamError("antigravity", 429, `Account unavailable: ${options.accountId}`)
         }
@@ -1043,16 +1053,16 @@ export async function* createChatCompletionStreamWithOptions(
         projectId = account.projectId
         accountEmail = account.email
     } else {
-        const account = await accountManager.getNextAvailableAccount()
+        // 🐛 修复：使用 request.model 而非未定义的 modelName
+        const account = await accountManager.getNextAvailableAccount(false, request.model)
         if (account) {
             accessToken = account.accessToken
             accountId = account.accountId
             projectId = account.projectId
             accountEmail = account.email
         } else {
-            accessToken = await getAccessToken()
-            projectId = state.cloudaicompanionProject || undefined
-            accountEmail = state.userEmail || undefined
+            // 🆕 修复：不再 fallback 到 getAccessToken()，直接抛出错误
+            throw new UpstreamError("antigravity", 429, "No available accounts (all disabled, insufficient quota, or rate limited)")
         }
     }
 

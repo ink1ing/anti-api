@@ -10,18 +10,99 @@
         type="image/x-icon">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* Theme Variables (Default: Midnight) */
+        :root {
+            --theme-bg: #000000;
+            --theme-card-bg: transparent;
+            --theme-card-border: rgba(55, 65, 81, 0.5);
+            --theme-text: #d1d5db;
+            --theme-text-muted: #6b7280;
+            --theme-accent: #22d3ee;
+        }
+
+        /* Theme: Midnight (Default) */
+        [data-theme="midnight"] {
+            --theme-bg: #000000;
+            --theme-card-bg: transparent;
+            --theme-card-border: rgba(55, 65, 81, 0.5);
+            --theme-text: #d1d5db;
+            --theme-text-muted: #6b7280;
+            --theme-accent: #22d3ee;
+        }
+
+        /* Theme: Cyberpunk */
+        [data-theme="cyberpunk"] {
+            --theme-bg: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            --theme-card-bg: rgba(48, 43, 99, 0.4);
+            --theme-card-border: rgba(255, 0, 128, 0.3);
+            --theme-text: #ff00ff;
+            --theme-text-muted: #a855f7;
+            --theme-accent: #ff0080;
+        }
+
+        /* Theme: Ocean */
+        [data-theme="ocean"] {
+            --theme-bg: linear-gradient(180deg, #0a1628 0%, #0d2137 50%, #0f172a 100%);
+            --theme-card-bg: rgba(14, 165, 233, 0.08);
+            --theme-card-border: rgba(14, 165, 233, 0.25);
+            --theme-text: #7dd3fc;
+            --theme-text-muted: #0ea5e9;
+            --theme-accent: #38bdf8;
+        }
+
+        /* Theme: Forest */
+        [data-theme="forest"] {
+            --theme-bg: linear-gradient(180deg, #052e16 0%, #14532d 50%, #0c1f0f 100%);
+            --theme-card-bg: rgba(34, 197, 94, 0.1);
+            --theme-card-border: rgba(34, 197, 94, 0.3);
+            --theme-text: #86efac;
+            --theme-text-muted: #22c55e;
+            --theme-accent: #4ade80;
+        }
+
+        /* Theme: Sunset */
+        [data-theme="sunset"] {
+            --theme-bg: linear-gradient(135deg, #1a0a0a 0%, #2d1810 50%, #1f0f05 100%);
+            --theme-card-bg: rgba(251, 146, 60, 0.1);
+            --theme-card-border: rgba(251, 146, 60, 0.3);
+            --theme-text: #fed7aa;
+            --theme-text-muted: #fb923c;
+            --theme-accent: #f97316;
+        }
+
+        /* Theme: Aurora */
+        [data-theme="aurora"] {
+            --theme-bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 30%, #134e4a 70%, #1e3a5f 100%);
+            --theme-card-bg: rgba(139, 92, 246, 0.1);
+            --theme-card-border: rgba(139, 92, 246, 0.3);
+            --theme-text: #c4b5fd;
+            --theme-text-muted: #a78bfa;
+            --theme-accent: #8b5cf6;
+        }
+
+        /* Theme: Warm */
+        [data-theme="warm"] {
+            --theme-bg: #1c1917;
+            --theme-card-bg: rgba(120, 113, 108, 0.15);
+            --theme-card-border: rgba(168, 162, 158, 0.3);
+            --theme-text: #e7e5e4;
+            --theme-text-muted: #a8a29e;
+            --theme-accent: #fbbf24;
+        }
+
         :root {
             --gemini-blue: #4796E3;
             --claude-orange: #DA7756;
             --white-glow: #ffffff;
             --dark-purple: #3b2a54;
-            --pure-black: #000000;
+            --pure-black: var(--theme-bg);
             --warm-dark: #262624;
         }
 
         body {
-            background: var(--pure-black);
+            background: var(--theme-bg);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: var(--theme-text);
         }
 
         @media (prefers-color-scheme: light) {
@@ -49,8 +130,8 @@
         .card-inner {
             transform-style: preserve-3d;
             transition: box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
-            background: transparent;
-            border: 1px solid rgba(55, 65, 81, 0.5);
+            background: var(--theme-card-bg, transparent);
+            border: 1px solid var(--theme-card-border);
         }
 
         /* ngrok - 蓝紫色光晕 */
@@ -127,14 +208,15 @@
         .refresh-btn button {
             transform-style: preserve-3d;
             transition: box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
-            background: rgba(17, 17, 17, 0.9);
+            background: var(--theme-card-bg, rgba(17, 17, 17, 0.9));
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(59, 42, 84, 0.3);
+            border: 1px solid var(--theme-card-border);
+            color: var(--theme-text);
         }
 
         .refresh-btn button:hover:not(:disabled) {
-            background: rgba(40, 40, 40, 0.9);
-            border-color: rgba(255, 255, 255, 0.3);
+            background: color-mix(in srgb, var(--theme-card-bg, rgba(40, 40, 40, 0.9)) 90%, var(--theme-accent));
+            border-color: var(--theme-accent);
         }
 
         .refresh-btn button:disabled {
@@ -143,16 +225,17 @@
         }
 
         .toast {
-            background: rgba(40, 40, 40, 0.95);
+            background: var(--theme-card-bg, rgba(40, 40, 40, 0.95));
             backdrop-filter: blur(10px);
             padding: 12px 20px;
             border-radius: 8px;
             font-size: 14px;
-            color: #fff;
+            color: var(--theme-text);
             margin-bottom: 8px;
             transform: translateX(400px);
             opacity: 0;
             transition: all 0.3s ease;
+            border: 1px solid var(--theme-card-border);
         }
 
         .toast.show {
@@ -168,7 +251,7 @@
         /* Iframe embed mode styles - match parent page background */
         body.iframe-mode {
             padding: 0 !important;
-            background: #000000 !important;
+            background: var(--theme-bg) !important;
         }
 
         body.iframe-mode .main-container {
@@ -194,8 +277,8 @@
     <div class="max-w-7xl mx-auto main-container">
         <!-- Header -->
         <div class="mb-6 remote-header">
-            <h1 class="text-3xl font-bold text-gray-300">Remote</h1>
-            <p class="text-gray-500 text-sm font-bold mt-1">Expose anti-api to external devices via ngrok tunnel</p>
+            <h1 class="text-3xl font-bold" style="color: var(--theme-text);">Remote</h1>
+            <p class="text-sm font-bold mt-1" style="color: var(--theme-text-muted);">Expose anti-api to external devices via ngrok tunnel</p>
         </div>
 
         <!-- ngrok Card - Simplified -->
@@ -204,10 +287,10 @@
                 <!-- Token Input Row -->
                 <div class="flex items-center gap-3 mb-6">
                     <input type="text" id="ngrok-authtoken" placeholder="Enter ngrok authtoken"
-                        class="flex-1 px-4 py-2.5 rounded-lg text-white text-sm"
-                        style="background: rgba(255,255,255,0.08); border: 1px solid rgba(55, 65, 81, 0.5);">
+                        class="flex-1 px-4 py-2.5 rounded-lg text-sm"
+                        style="background: var(--theme-card-bg, rgba(255,255,255,0.08)); border: 1px solid var(--theme-card-border); color: var(--theme-text);">
                     <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank"
-                        class="text-cyan-400 text-sm font-medium hover:text-cyan-300 whitespace-nowrap">
+                        class="text-sm font-medium hover:opacity-80 whitespace-nowrap" style="color: var(--theme-accent);">
                         Get Token →
                     </a>
                 </div>
@@ -216,19 +299,19 @@
                 <div class="flex items-center gap-4 mb-6">
                     <div class="refresh-btn">
                         <button id="ngrok-toggle" onclick="toggleTunnel()"
-                            class="px-6 py-2.5 rounded-lg font-bold text-gray-200 text-sm min-w-[100px]">
+                            class="px-6 py-2.5 rounded-lg font-bold text-sm min-w-[100px]">
                             Start
                         </button>
                     </div>
-                    <span id="ngrok-status-text" class="text-sm text-gray-500">Not connected</span>
+                    <span id="ngrok-status-text" class="text-sm" style="color: var(--theme-text-muted);">Not connected</span>
                 </div>
 
                 <!-- URL Display - Large and Clickable -->
                 <div id="ngrok-url-container" class="hidden">
-                    <div class="text-xs text-gray-500 mb-2">Click to copy URL:</div>
+                    <div class="text-xs mb-2" style="color: var(--theme-text-muted);">Click to copy URL:</div>
                     <div id="ngrok-url" onclick="copyNgrokUrl()"
-                        class="p-4 rounded-xl text-lg font-mono text-cyan-400 cursor-pointer hover:bg-gray-800/50 transition-colors truncate"
-                        style="background: rgba(0,0,0,0.3); border: 1px solid rgba(34, 211, 238, 0.3);">
+                        class="p-4 rounded-xl text-lg font-mono cursor-pointer hover:opacity-80 transition-colors truncate"
+                        style="background: var(--theme-card-bg, rgba(0,0,0,0.3)); border: 1px solid color-mix(in srgb, var(--theme-accent) 30%, transparent); color: var(--theme-accent);">
                     </div>
                 </div>
             </div>
@@ -239,7 +322,7 @@
     <div id="toast-container" class="fixed bottom-8 right-8 z-50"></div>
 
     <script>
-        const API_BASE = 'http://localhost:8964';
+        const API_BASE = `${window.location.protocol}//${window.location.hostname}:8964`;
         let ngrokUrl = null;
         let isRunning = false;
 
@@ -430,12 +513,120 @@
         refreshStatus();
         setInterval(refreshStatus, 5000);
         // init3DEffect(); // Removed 3D tilt effect
+
+        // 🆕 监听主题变化（从主页面同步）
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme || 'midnight');
+            document.body.style.background = 'var(--theme-bg)';
+        }
+
+        // 初始化时从 localStorage 读取主题
+        const savedTheme = localStorage.getItem('anti-api-theme') || 'midnight';
+        applyTheme(savedTheme);
+
+        // 监听 storage 变化（跨页面同步）
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'anti-api-theme') {
+                applyTheme(e.newValue || 'midnight');
+            }
+        });
+
+        // 监听来自父页面的主题消息（iframe 模式）
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'theme-change') {
+                applyTheme(e.data.theme);
+            }
+            // 🆕 监听语言变化
+            if (e.data && e.data.type === 'language-change') {
+                applyLanguage(e.data.lang);
+            }
+        });
+
+        // 🆕 多语言支持
+        const i18n = {
+            en: {
+                title: 'Remote',
+                subtitle: 'Expose anti-api to external devices via ngrok tunnel',
+                placeholder: 'Enter ngrok authtoken',
+                getToken: 'Get Token →',
+                start: 'Start',
+                stop: 'Stop',
+                notConnected: 'Not connected',
+                connected: 'Connected',
+                starting: 'Starting...',
+                clickToCopy: 'Click to copy URL:',
+                urlCopied: 'URL copied to clipboard',
+                copyFailed: 'Copy failed',
+                noUrl: 'No URL to copy',
+                ngrokStarted: 'ngrok started successfully',
+                ngrokStopped: 'ngrok stopped',
+                waitingUrl: 'Starting, waiting for URL...',
+            },
+            zh: {
+                title: '远程',
+                subtitle: '通过 ngrok 隧道将 anti-api 暴露给外部设备',
+                placeholder: '输入 ngrok authtoken',
+                getToken: '获取 Token →',
+                start: '启动',
+                stop: '停止',
+                notConnected: '未连接',
+                connected: '已连接',
+                starting: '启动中...',
+                clickToCopy: '点击复制 URL：',
+                urlCopied: 'URL 已复制到剪贴板',
+                copyFailed: '复制失败',
+                noUrl: '没有可复制的 URL',
+                ngrokStarted: 'ngrok 启动成功',
+                ngrokStopped: 'ngrok 已停止',
+                waitingUrl: '启动中，等待 URL...',
+            }
+        };
+
+        let currentLang = localStorage.getItem('anti-api-language') || 'en';
+
+        function t(key) {
+            return i18n[currentLang]?.[key] || i18n.en[key] || key;
+        }
+
+        function applyLanguage(lang) {
+            currentLang = lang || 'en';
+            // 更新页面文本
+            document.querySelector('.remote-header h1').textContent = t('title');
+            document.querySelector('.remote-header p').textContent = t('subtitle');
+            document.getElementById('ngrok-authtoken').placeholder = t('placeholder');
+            document.querySelector('a[href*="ngrok"]').textContent = t('getToken');
+
+            // 更新按钮和状态文本
+            const toggleBtn = document.getElementById('ngrok-toggle');
+            const statusText = document.getElementById('ngrok-status-text');
+            if (isRunning) {
+                toggleBtn.textContent = t('stop');
+                statusText.textContent = t('connected');
+            } else {
+                toggleBtn.textContent = t('start');
+                statusText.textContent = t('notConnected');
+            }
+
+            // 更新 URL 提示
+            const urlHint = document.querySelector('#ngrok-url-container > div:first-child');
+            if (urlHint) urlHint.textContent = t('clickToCopy');
+        }
+
+        // 初始化语言
+        applyLanguage(currentLang);
+
+        // 监听 storage 变化（跨页面同步语言）
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'anti-api-language') {
+                applyLanguage(e.newValue || 'en');
+            }
+        });
     </script>
 
     <!-- Footer -->
     <div class="max-w-7xl mx-auto mt-8 text-center" id="remote-footer">
-        <p class="text-gray-600 text-sm">© 2025 Silas · <a href="https://github.com/ink1ing/anti-api" target="_blank"
-                class="text-gray-500 hover:text-gray-400">github.com/ink1ing/anti-api</a></p>
+        <p class="text-sm" style="color: var(--theme-text-muted);">© 2025 Silas · <a href="https://github.com/ink1ing/anti-api" target="_blank"
+                class="hover:opacity-80" style="color: var(--theme-text-muted);">github.com/ink1ing/anti-api</a></p>
     </div>
     <script>
         // Hide footer when embedded

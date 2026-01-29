@@ -5,6 +5,7 @@
 
 import https from "https"
 import { state } from "~/lib/state"
+import consola from "consola"
 
 // OAuth 配置（来自 CLIProxyAPI）
 export const OAUTH_CONFIG = {
@@ -293,32 +294,45 @@ export function startOAuthCallbackServer(): Promise<{
             callbackResolve = res
         })
 
-        const server = Bun.serve({
-            port: OAUTH_CONFIG.callbackPort,
-            fetch(req) {
-                const url = new URL(req.url)
+        consola.info(`[OAuth] Starting callback server on 0.0.0.0:${OAUTH_CONFIG.callbackPort}...`)
 
-                if (url.pathname === "/oauth-callback") {
-                    const code = url.searchParams.get("code")
-                    const state = url.searchParams.get("state")
-                    const error = url.searchParams.get("error")
+        try {
+            const server = Bun.serve({
+                port: OAUTH_CONFIG.callbackPort,
+                hostname: "0.0.0.0",  // 绑定到所有网络接口，Docker 环境必需
+                fetch(req) {
+                    const url = new URL(req.url)
+                    consola.info(`[OAuth] Received request: ${req.method} ${url.pathname}`)
 
-                    if (callbackResolve) {
-                        callbackResolve({ code: code || undefined, state: state || undefined, error: error || undefined })
+                    if (url.pathname === "/oauth-callback") {
+                        const code = url.searchParams.get("code")
+                        const state = url.searchParams.get("state")
+                        const error = url.searchParams.get("error")
+
+                        consola.info(`[OAuth] Callback received - code: ${code ? "yes" : "no"}, state: ${state ? "yes" : "no"}, error: ${error || "none"}`)
+
+                        if (callbackResolve) {
+                            callbackResolve({ code: code || undefined, state: state || undefined, error: error || undefined })
+                        }
+
+                        // Redirect to official success page
+                        return Response.redirect("https://antigravity.google/auth-success", 302)
                     }
 
-                    // Redirect to official success page
-                    return Response.redirect("https://antigravity.google/auth-success", 302)
-                }
+                    return new Response("Not Found", { status: 404 })
+                },
+            })
 
-                return new Response("Not Found", { status: 404 })
-            },
-        })
+            consola.success(`[OAuth] Callback server started successfully on port ${OAUTH_CONFIG.callbackPort}`)
 
-        resolve({
-            server,
-            port: OAUTH_CONFIG.callbackPort,
-            waitForCallback: () => callbackPromise,
-        })
+            resolve({
+                server,
+                port: OAUTH_CONFIG.callbackPort,
+                waitForCallback: () => callbackPromise,
+            })
+        } catch (error) {
+            consola.error(`[OAuth] Failed to start callback server:`, error)
+            reject(new Error(`Failed to start server. Is port ${OAUTH_CONFIG.callbackPort} in use?`))
+        }
     })
 }

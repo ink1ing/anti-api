@@ -50,29 +50,37 @@ export class ProtoEncoder {
 /**
  * Antigravity Model Enum Values
  * Extracted from extension.js protobuf definitions (2024-12-24)
+ * Extended with models from Antigravity-Manager project
  */
 export const MODEL_ENUM = {
-    // Claude models
-    CLAUDE_4_SONNET: 281,
-    CLAUDE_4_SONNET_THINKING: 282,
-    CLAUDE_4_OPUS: 290,
-    CLAUDE_4_OPUS_THINKING: 291,
+    // ==================== Claude 4.5 系列 ====================
+    CLAUDE_4_5_OPUS_THINKING: 291,     // Claude Opus 4.5 uses same enum as 4 Opus Thinking
     CLAUDE_4_5_SONNET: 333,
     CLAUDE_4_5_SONNET_THINKING: 334,
     CLAUDE_4_5_HAIKU: 340,
     CLAUDE_4_5_HAIKU_THINKING: 341,
 
-    // Gemini 2.5 models
-    GEMINI_2_5_PRO: 246,
-    GEMINI_2_5_FLASH: 312,
+    // ==================== Claude 4 系列 ====================
+    CLAUDE_4_OPUS: 290,
+    CLAUDE_4_OPUS_THINKING: 291,
+    CLAUDE_4_SONNET: 281,
+    CLAUDE_4_SONNET_THINKING: 282,
 
-    // Gemini 3 models (代号)
+    // ==================== Gemini 3 系列 ====================
     GEMINI_3_PRO_HIGH: 353,    // RIFTRUNNER_THINKING_HIGH
     GEMINI_3_PRO_LOW: 352,     // RIFTRUNNER_THINKING_LOW
-    GEMINI_3_FLASH: 348,       // RIFTRUNNER
     GEMINI_3_PRO: 350,         // INFINITYJET
+    GEMINI_3_FLASH: 348,       // RIFTRUNNER
 
-    // GPT-OSS models
+    // ==================== Gemini 2.5 系列 ====================
+    GEMINI_2_5_PRO: 246,
+    GEMINI_2_5_FLASH: 312,
+    GEMINI_2_5_FLASH_THINKING: 313,    // Flash with thinking
+
+    // ==================== Gemini 2.0 系列 ====================
+    GEMINI_2_0_FLASH_EXP: 310,
+
+    // ==================== GPT-OSS 系列 ====================
     GPT_OSS_120B_MEDIUM: 342,
 } as const
 
@@ -81,6 +89,12 @@ export const MODEL_ENUM = {
  */
 export function getModelEnumValue(modelName: string): number | undefined {
     const normalized = modelName.toLowerCase().replace(/[- .]/g, "_")
+
+    // ==================== Claude 4.5 系列 ====================
+    // Claude 4.5 Opus (only thinking version)
+    if (normalized.includes("opus_4_5") || normalized.includes("4_5_opus")) {
+        return MODEL_ENUM.CLAUDE_4_5_OPUS_THINKING
+    }
 
     // Claude 4.5 Sonnet (with thinking)
     if (normalized.includes("sonnet_4_5") || normalized.includes("4_5_sonnet")) {
@@ -98,12 +112,7 @@ export function getModelEnumValue(modelName: string): number | undefined {
         return MODEL_ENUM.CLAUDE_4_5_HAIKU
     }
 
-    // Claude Opus 4.5 (thinking)
-    if (normalized.includes("opus_4_5") || normalized.includes("4_5_opus")) {
-        // Opus 4.5 only has thinking version
-        return MODEL_ENUM.CLAUDE_4_OPUS_THINKING
-    }
-
+    // ==================== Claude 4 系列 ====================
     // Claude 4 Opus
     if (normalized.includes("opus_4") || normalized.includes("4_opus")) {
         if (normalized.includes("think")) {
@@ -120,8 +129,13 @@ export function getModelEnumValue(modelName: string): number | undefined {
         return MODEL_ENUM.CLAUDE_4_SONNET
     }
 
+    // ==================== Gemini 3 系列 ====================
     // Gemini 3 Pro (High/Low)
     if (normalized.includes("gemini_3_pro")) {
+        // Skip image generation models - they're handled separately
+        if (normalized.includes("image")) {
+            return MODEL_ENUM.GEMINI_3_PRO  // Use base Pro for image gen
+        }
         if (normalized.includes("high")) {
             return MODEL_ENUM.GEMINI_3_PRO_HIGH
         }
@@ -132,28 +146,33 @@ export function getModelEnumValue(modelName: string): number | undefined {
     }
 
     // Gemini 3 Flash
-    if (normalized.includes("gemini_3_flash")) {
+    if (normalized.includes("gemini_3_flash") || normalized.includes("3_flash") || normalized.includes("flash_3")) {
         return MODEL_ENUM.GEMINI_3_FLASH
     }
 
+    // ==================== Gemini 2.5 系列 ====================
     // Gemini 2.5 Pro
     if (normalized.includes("gemini_2_5_pro") || normalized.includes("gemini_25_pro")) {
         return MODEL_ENUM.GEMINI_2_5_PRO
     }
 
-    // Gemini 2.5 Flash
+    // Gemini 2.5 Flash (with thinking/lite variants)
     if (normalized.includes("gemini_2_5_flash") || normalized.includes("gemini_25_flash")) {
+        if (normalized.includes("think")) {
+            return MODEL_ENUM.GEMINI_2_5_FLASH_THINKING
+        }
+        // lite variant uses same as flash
         return MODEL_ENUM.GEMINI_2_5_FLASH
     }
 
-    // GPT-OSS 120B
-    if (normalized.includes("gpt_oss") || normalized.includes("gptoss")) {
-        return MODEL_ENUM.GPT_OSS_120B_MEDIUM
+    // ==================== Gemini 2.0 系列 ====================
+    if (normalized.includes("gemini_2_0_flash") || normalized.includes("gemini_20_flash")) {
+        return MODEL_ENUM.GEMINI_2_0_FLASH_EXP
     }
 
-    // Gemini 3 Flash - fallback check
-    if (normalized.includes("3_flash") || normalized.includes("flash_3")) {
-        return MODEL_ENUM.GEMINI_3_FLASH
+    // ==================== GPT-OSS 系列 ====================
+    if (normalized.includes("gpt_oss") || normalized.includes("gptoss")) {
+        return MODEL_ENUM.GPT_OSS_120B_MEDIUM
     }
 
     // Default: no specific model (let Cascade choose)

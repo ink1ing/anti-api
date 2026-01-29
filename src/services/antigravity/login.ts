@@ -134,7 +134,146 @@ export function setAuth(accessToken: string, refreshToken?: string, email?: stri
 }
 
 /**
- * 启动 OAuth 登录流程
+ * 启动 OAuth 登录流程（非阻塞模式，返回授权 URL）
+ */
+export interface OAuthSession {
+    sessionId: string
+    authUrl: string
+    redirectUri: string
+    oauthState: string
+    server: { stop: () => void }
+    waitForCallback: () => Promise<{ code?: string; state?: string; error?: string }>
+}
+
+const activeSessions = new Map<string, OAuthSession>()
+
+export async function startOAuthLoginAsync(): Promise<{
+    success: boolean
+    status: "pending" | "error"
+    sessionId?: string
+    authUrl?: string
+    error?: string
+}> {
+    try {
+        // 1. 启动回调服务器
+        const { server, port, waitForCallback } = await startOAuthCallbackServer()
+
+        // 2. 生成授权 URL
+        const oauthState = generateState()
+        const sessionId = oauthState // 用 state 作为 session ID
+        const redirectUri = process.env.ANTI_API_OAUTH_REDIRECT_URL || `http://localhost:${port}/oauth-callback`
+        const authUrl = generateAuthURL(redirectUri, oauthState)
+
+        // 3. 保存 session
+        const session: OAuthSession = {
+            sessionId,
+            authUrl,
+            redirectUri,
+            oauthState,
+            server,
+            waitForCallback,
+        }
+        activeSessions.set(sessionId, session)
+
+        // 4. 设置超时自动清理（5分钟）
+        setTimeout(() => {
+            const s = activeSessions.get(sessionId)
+            if (s) {
+                try { s.server.stop() } catch {}
+                activeSessions.delete(sessionId)
+            }
+        }, 5 * 60 * 1000)
+
+        consola.info(`Open this URL to login: ${authUrl}`)
+
+        return {
+            success: true,
+            status: "pending",
+            sessionId,
+            authUrl,
+        }
+    } catch (error) {
+        consola.error("OAuth login failed:", error)
+        return { success: false, status: "error", error: (error as Error).message }
+    }
+}
+
+export async function pollOAuthSession(sessionId: string): Promise<{
+    status: "pending" | "success" | "error"
+    email?: string
+    error?: string
+}> {
+    const session = activeSessions.get(sessionId)
+    if (!session) {
+        return { status: "error", error: "Session not found or expired" }
+    }
+
+    // 检查回调是否已经完成（非阻塞检查）
+    const result = await Promise.race([
+        session.waitForCallback(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
+    ])
+
+    if (result === null) {
+        // 还没收到回调
+        return { status: "pending" }
+    }
+
+    // 收到回调了，处理结果
+    try {
+        session.server.stop()
+    } catch {}
+    activeSessions.delete(sessionId)
+
+    if (result.error) {
+        return { status: "error", error: result.error }
+    }
+
+    if (!result.code || !result.state) {
+        return { status: "error", error: "Missing code or state in callback" }
+    }
+
+    if (result.state !== session.oauthState) {
+        return { status: "error", error: "State mismatch - possible CSRF attack" }
+    }
+
+    try {
+        // 交换 code 获取 tokens
+        const tokens = await exchangeCode(result.code, session.redirectUri)
+
+        // 获取用户信息
+        const userInfo = await fetchUserInfo(tokens.accessToken)
+
+        // 获取 Project ID
+        const projectId = await getProjectID(tokens.accessToken)
+        const resolvedProjectId = projectId || generateMockProjectId()
+        if (!projectId) {
+            consola.warn(`No project ID returned, using fallback: ${resolvedProjectId}`)
+        }
+
+        // 保存认证信息
+        state.accessToken = tokens.accessToken
+        state.antigravityToken = tokens.accessToken
+        state.refreshToken = tokens.refreshToken
+        state.tokenExpiresAt = Date.now() + tokens.expiresIn * 1000
+        state.userEmail = userInfo.email
+        state.userName = userInfo.email.split("@")[0]
+        state.cloudaicompanionProject = resolvedProjectId
+
+        saveAuth()
+
+        consola.success(`✓ Login successful: ${userInfo.email}`)
+        consola.success(`✓ Project ID: ${resolvedProjectId}`)
+
+        return { status: "success", email: userInfo.email }
+    } catch (error) {
+        consola.error("OAuth token exchange failed:", error)
+        return { status: "error", error: (error as Error).message }
+    }
+}
+
+/**
+ * 启动 OAuth 登录流程（阻塞模式，兼容旧代码）
  */
 export async function startOAuthLogin(): Promise<{ success: boolean; error?: string; email?: string }> {
     let oauthServer: { stop: () => void } | null = null

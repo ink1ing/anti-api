@@ -92,7 +92,8 @@ function detectProvider(model: string): "gpt" | "claude" | "gemini" {
     const m = model.toLowerCase()
     if (m.includes("gpt") || m.includes("o1") || m.includes("o3") || m.includes("o4")) return "gpt"
     if (m.includes("claude") || m.includes("opus") || m.includes("sonnet")) return "claude"
-    if (m.includes("gemini") || m.includes("flash") || m.includes("pro")) return "gemini"
+    // 画图模型 (gemini-3-pro-image) 也属于 gemini 类型
+    if (m.includes("gemini") || m.includes("flash") || m.includes("pro") || m.includes("image")) return "gemini"
     // Default to claude for antigravity models
     return "claude"
 }

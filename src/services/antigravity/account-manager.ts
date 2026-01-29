@@ -15,6 +15,7 @@ import { MIN_REQUEST_INTERVAL_MS } from "~/lib/constants"
 import { fetchAntigravityModels, pickResetTime } from "./quota-fetch"
 import { UpstreamError } from "~/lib/error"
 import { getDataDir } from "~/lib/data-dir"
+import { isAccountDisabled } from "~/services/routing/config"
 
 type RateLimitReason =
     | "quota_exhausted"
@@ -222,20 +223,9 @@ class AccountManager {
             this.hydrateFromAuthStore()
         }
 
-        // 如果没有已保存的账号，从 state 迁移当前账号
-        if (this.accounts.size === 0 && state.accessToken && state.refreshToken) {
-            const id = state.userEmail || "default"
-            this.accounts.set(id, {
-                id,
-                email: state.userEmail || "unknown",
-                accessToken: state.accessToken,
-                refreshToken: state.refreshToken,
-                expiresAt: state.tokenExpiresAt || 0,
-                projectId: state.cloudaicompanionProject,
-                rateLimitedUntil: null,
-                consecutiveFailures: 0,
-            })
-        }
+        // 🆕 修复：移除从 state 迁移账号的逻辑
+        // 不再自动 fallback 到 state.accessToken，强制用户通过正式流程添加账号
+        // 这样可以确保所有账号都经过禁用/配额检查
 
         // 🆕 确保干净启动：清除上次使用的账号记录
         this.lastUsedAccount = null
@@ -545,13 +535,18 @@ class AccountManager {
     /**
      * 获取下一个可用账号
      * 🆕 粘性策略：使用队列顺序，队首优先
+     * @param forceRotate 是否强制轮换账号
+     * @param modelId 模型ID（用于检查特定配额，如画图模型需要 gimage 配额）
      */
-    async getNextAvailableAccount(forceRotate: boolean = false): Promise<{
+    async getNextAvailableAccount(forceRotate: boolean = false, modelId?: string): Promise<{
         accessToken: string
         projectId: string
         email: string
         accountId: string
     } | null> {
+        // 🆕 入口日志：确保一定输出
+        console.log(`[AccountManager] getNextAvailableAccount called: forceRotate=${forceRotate}, modelId=${modelId || 'undefined'}`)
+
         this.ensureLoaded()
         if (this.accounts.size === 0) {
             this.hydrateFromAuthStore()
@@ -561,7 +556,52 @@ class AccountManager {
         const now = Date.now()
 
         if (this.accounts.size === 0) {
+            console.log(`[AccountManager] ❌ No accounts available`)
             return null
+        }
+
+        console.log(`[AccountManager] Total accounts: ${this.accounts.size}, Queue: ${this.accountQueue.length}`)
+
+        // 🆕 读取配额保留设置
+        const { getSetting } = await import("~/services/settings")
+        const reservePercent = getSetting("quotaReservePercent") || 0
+
+        console.log(`[AccountManager] Quota reserve setting: ${reservePercent}%`)
+
+        // 🆕 检查账号是否有足够的配额（支持所有模型类型 + 配额保留）
+        const hasModelQuota = async (accountId: string): Promise<boolean> => {
+            if (!modelId) {
+                console.log(`[AccountManager] Skipping quota check (no modelId specified)`)
+                return true // 没有指定模型，不检查配额
+            }
+
+            const account = this.accounts.get(accountId)
+            if (!account) {
+                console.log(`[AccountManager] ❌ Account ${accountId} not found`)
+                return false
+            }
+
+            const { getAccountModelQuotaPercent } = await import("~/services/quota-aggregator")
+
+            // ✅ 修复：传入正确的 provider 参数
+            const quotaPercent = getAccountModelQuotaPercent("antigravity", accountId, modelId)
+
+            // 如果获取配额失败（返回 null），说明缓存为空或未刷新
+            if (quotaPercent === null) {
+                consola.warn(`⚠️  No quota cache for ${account.email}, model ${modelId}. Please refresh quota in Dashboard!`)
+                // 🔴 改为保守策略：假设无配额，跳过该账号
+                return false
+            }
+
+            // 打印调试信息（使用 console.log 确保输出）
+            console.log(`[Account] ${account.email}: ${modelId} quota = ${quotaPercent}%, reserve = ${reservePercent}%`)
+
+            // 配额必须高于保留阈值
+            const hasQuota = quotaPercent > reservePercent
+            if (!hasQuota) {
+                console.log(`[Account] ${account.email}: ${quotaPercent}% <= ${reservePercent}% (reserve), insufficient quota`)
+            }
+            return hasQuota
         }
 
         // 🆕 是否存在空闲账号（避免选中正在处理的账号）
@@ -578,8 +618,17 @@ class AccountManager {
             const firstId = this.accountQueue[0]
             const firstAccount = this.accounts.get(firstId)
             if (firstAccount && (!firstAccount.rateLimitedUntil || firstAccount.rateLimitedUntil <= now)) {
+                // 🆕 最高优先级：检查账户是否被手动禁用
+                if (isAccountDisabled("antigravity", firstId)) {
+                    console.log(`[AccountManager] Skipping ${firstAccount.email}: account manually disabled`)
+                } else {
+                // 🆕 检查模型配额（包含配额保留）
+                const hasQuota = await hasModelQuota(firstId)
                 if (hasIdleAccount && this.inFlightAccounts.has(firstId)) {
                     // Prefer idle accounts when available
+                } else if (!hasQuota) {
+                    // 该账号配额不足（低于保留阈值），跳过
+                    console.log(`[Account] ${firstAccount.email} has insufficient quota for ${modelId} (${reservePercent}% reserve), skipping...`)
                 } else {
                 // 刷新 token 如果需要
                 if (firstAccount.expiresAt > 0 && now > firstAccount.expiresAt - 5 * 60 * 1000) {
@@ -600,6 +649,7 @@ class AccountManager {
                     accountId: firstAccount.id,
                 }
                 }
+                }
             }
         }
 
@@ -608,12 +658,25 @@ class AccountManager {
             const account = this.accounts.get(accountId)
             if (!account) continue
 
+            // 🆕 最高优先级：检查账户是否被手动禁用
+            if (isAccountDisabled("antigravity", accountId)) {
+                console.log(`[AccountManager] Skipping ${account.email}: account manually disabled`)
+                continue
+            }
+
             // 检查是否被限流
             if (account.rateLimitedUntil && account.rateLimitedUntil > now) {
                 const waitSeconds = Math.ceil((account.rateLimitedUntil - now) / 1000)
                 continue
             }
             if (hasIdleAccount && this.inFlightAccounts.has(accountId)) {
+                continue
+            }
+
+            // 🆕 检查模型配额（包含配额保留）
+            const hasQuota = await hasModelQuota(accountId)
+            if (!hasQuota) {
+                console.log(`[Account] ${account.email} has insufficient quota for ${modelId} (${reservePercent}% reserve), skipping...`)
                 continue
             }
 
@@ -658,58 +721,17 @@ class AccountManager {
             }
         }
 
-        // 所有账号都被限流 - 找等待时间最短的
-        const allAccounts = Array.from(this.accounts.values())
-        let bestAccount = allAccounts[0]
-        let minWaitMs: number | null = null
-        for (const acc of allAccounts) {
-            if (!acc.rateLimitedUntil) {
-                bestAccount = acc
-                minWaitMs = 0
-                break
-            }
-            const waitMs = Math.max(acc.rateLimitedUntil - now, 0)
-            if (minWaitMs === null || waitMs < minWaitMs) {
-                minWaitMs = waitMs
-                bestAccount = acc
-            }
-        }
-
-        if (minWaitMs !== null && minWaitMs <= 2000) {
-            // 🔄 乐观重置：等待时间很短时，清除所有限流记录
-            consola.warn(`All accounts rate limited, waiting ${Math.ceil(minWaitMs / 1000)}s for sync...`)
-            await new Promise(resolve => setTimeout(resolve, 500))
-            const refreshed = allAccounts.find(acc => !acc.rateLimitedUntil || acc.rateLimitedUntil <= Date.now())
-            if (refreshed) {
-                return {
-                    accessToken: refreshed.accessToken,
-                    projectId: refreshed.projectId || "unknown",
-                    email: refreshed.email,
-                    accountId: refreshed.id,
-                }
-            }
-            // 乐观重置：清除所有限流记录
-            consola.warn(`🔄 Optimistic reset: Clearing all ${allAccounts.length} rate limit record(s)`)
-            for (const acc of allAccounts) {
-                acc.rateLimitedUntil = null
-                acc.consecutiveFailures = 0
-            }
-            return {
-                accessToken: bestAccount.accessToken,
-                projectId: bestAccount.projectId || "unknown",
-                email: bestAccount.email,
-                accountId: bestAccount.id,
-            }
-        }
-
-        consola.warn(`All accounts rate limited, min wait ${Math.ceil(minWaitMs || 0 / 1000)}s`)
+        // 所有账号都被跳过（禁用/配额不足/限流）
+        // 🆕 修复：不再 fallback 到被禁用或配额不足的账户，直接返回 null
+        console.log(`[AccountManager] ❌ No available accounts (all disabled, insufficient quota, or rate limited)`)
         return null
     }
 
     /**
      * 按 ID 获取指定账号（并刷新 token）
+     * 🆕 增强：添加禁用检查和配额检查
      */
-    async getAccountById(accountId: string): Promise<{
+    async getAccountById(accountId: string, modelId?: string): Promise<{
         accessToken: string
         projectId: string
         email: string
@@ -722,9 +744,27 @@ class AccountManager {
         const account = this.accounts.get(accountId)
         if (!account) return null
 
+        // 🆕 检查是否被手动禁用
+        if (isAccountDisabled("antigravity", accountId)) {
+            console.log(`[AccountManager] Account ${accountId} is disabled`)
+            return null
+        }
+
         const now = Date.now()
         if (account.rateLimitedUntil && account.rateLimitedUntil > now) {
             return null
+        }
+
+        // 🆕 检查配额（如果提供了 modelId）
+        if (modelId) {
+            const { getAccountModelQuotaPercent } = await import("~/services/quota-aggregator")
+            const { getSetting } = await import("~/services/settings")
+            const reservePercent = getSetting("quotaReservePercent") || 0
+            const quotaPercent = getAccountModelQuotaPercent("antigravity", accountId, modelId)
+            if (quotaPercent !== null && quotaPercent <= reservePercent) {
+                console.log(`[AccountManager] Account ${accountId} has insufficient quota for ${modelId}: ${quotaPercent}% <= ${reservePercent}%`)
+                return null
+            }
         }
 
         if (account.expiresAt > 0 && now > account.expiresAt - 5 * 60 * 1000) {
