@@ -26,6 +26,8 @@ export interface AppSettings {
     // API Key 安全：保护 API 端点
     apiKey: string
     apiKeyEnabled: boolean
+    // Token Saver：后台任务重定向到免费模型
+    tokenSaverEnabled: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -42,6 +44,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     quotaReservePercent: 0, // 默认不保留，0 表示用尽才切换
     apiKey: "", // 首次加载时自动生成
     apiKeyEnabled: false, // 默认关闭，用户可手动开启
+    tokenSaverEnabled: true, // 默认开启，后台任务自动重定向到免费模型
 }
 
 function generateApiKey(): string {

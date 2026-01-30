@@ -18,6 +18,7 @@ import { getSetting } from "~/services/settings"
 import { normalizeModelName } from "./model-aliases"
 import { accountSelector } from "~/services/account-selector"
 import { isQuotaBlacklisted, addToQuotaBlacklist } from "~/services/quota-blacklist"
+import { applyTokenSaver } from "~/lib/token-saver"
 
 export class RoutingError extends Error {
     status: number
@@ -806,6 +807,14 @@ function extractPromptFromMessages(messages: ClaudeMessage[]): string {
 }
 
 export async function createRoutedCompletion(request: RoutedRequest) {
+    // Token Saver: 检测后台任务（在其他检查之前）
+    const tokenSaverEnabled = getSetting("tokenSaverEnabled")
+    const tokenSaverResult = applyTokenSaver(request.model, request.messages, tokenSaverEnabled)
+    if (tokenSaverResult.shouldRedirect) {
+        console.log(`\x1b[33m[TokenSaver] 后台任务重定向: ${request.model} → ${tokenSaverResult.targetModel}\x1b[0m`)
+        request = { ...request, model: tokenSaverResult.targetModel }
+    }
+
     if (isHiddenCodexModel(request.model)) {
         throw new RoutingError("Model is not available", 400)
     }
@@ -1210,6 +1219,14 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
 }
 
 export async function* createRoutedCompletionStream(request: RoutedRequest): AsyncGenerator<string, void, unknown> {
+    // Token Saver: 检测后台任务（在其他检查之前）
+    const tokenSaverEnabled = getSetting("tokenSaverEnabled")
+    const tokenSaverResult = applyTokenSaver(request.model, request.messages, tokenSaverEnabled)
+    if (tokenSaverResult.shouldRedirect) {
+        console.log(`\x1b[33m[TokenSaver] 后台任务重定向: ${request.model} → ${tokenSaverResult.targetModel}\x1b[0m`)
+        request = { ...request, model: tokenSaverResult.targetModel }
+    }
+
     if (isHiddenCodexModel(request.model)) {
         throw new RoutingError("Model is not available", 400)
     }
