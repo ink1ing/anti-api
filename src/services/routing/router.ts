@@ -1,17 +1,24 @@
 import type { ClaudeMessage, ClaudeTool } from "~/lib/translator"
 import { UpstreamError } from "~/lib/error"
 import { createChatCompletionWithOptions, createChatCompletionStreamWithOptions } from "~/services/antigravity/chat"
+import { generateImages } from "~/services/antigravity/image-generation"
 import { accountManager } from "~/services/antigravity/account-manager"
 import { createCodexCompletion } from "~/services/codex/chat"
 import { createCopilotCompletion } from "~/services/copilot/chat"
 import { authStore } from "~/services/auth/store"
 import type { ProviderAccount } from "~/services/auth/types"
-import { loadRoutingConfig, type RoutingEntry, type RoutingConfig, type AccountRoutingEntry } from "./config"
+import { loadRoutingConfig, isAccountDisabled, type RoutingEntry, type RoutingConfig, type AccountRoutingEntry } from "./config"
 import { getProviderModels, isHiddenCodexModel } from "./models"
 import { buildMessageStart, buildContentBlockStart, buildTextDelta, buildInputJsonDelta, buildContentBlockStop, buildMessageDelta, buildMessageStop } from "~/lib/translator"
 import { formatLogTime, setRequestLogContext } from "~/lib/logger"
 import type { AuthProvider } from "~/services/auth/types"
 import { recordUsage } from "~/services/usage-tracker"
+import { getAccountModelQuotaPercent } from "~/services/quota-aggregator"
+import { getSetting } from "~/services/settings"
+import { normalizeModelName } from "./model-aliases"
+import { accountSelector } from "~/services/account-selector"
+import { isQuotaBlacklisted, addToQuotaBlacklist } from "~/services/quota-blacklist"
+import { applyTokenSaver } from "~/lib/token-saver"
 
 export class RoutingError extends Error {
     status: number
@@ -55,32 +62,28 @@ function isEntryUsable(entry: RoutingEntry): boolean {
     return !!authStore.getAccount(entry.provider, entry.accountId)
 }
 
-// 🆕 Router 级别的 rate-limit 状态（独立于 accountManager）
-const routerRateLimits = new Map<string, number>()  // "provider:accountId" -> expiry timestamp
+// 🆕 Router 级别的配额缓存（5秒 TTL，减少配额检查开销）
+const routerQuotaCache = new Map<string, { percent: number | null; expiry: number }>()
+const ROUTER_QUOTA_CACHE_TTL = 5000 // 5秒
+// 配额黑名单已迁移到 ~/services/quota-blacklist 共享模块
+
 const PROVIDER_ORDER: AuthProvider[] = ["antigravity", "codex", "copilot"]
 let officialModelIndex: Map<string, Set<AuthProvider>> | null = null
 const flowStickyStates = new Map<string, FlowStickyState>()
 const accountStickyStates = new Map<string, AccountStickyState>()
 
-function getRouterRateLimitKey(provider: string, accountId: string): string {
-    return `${provider}:${accountId}`
-}
-
-function isRouterRateLimited(provider: string, accountId: string): boolean {
-    const key = getRouterRateLimitKey(provider, accountId)
-    const expiry = routerRateLimits.get(key)
-    if (!expiry) return false
-    if (Date.now() > expiry) {
-        routerRateLimits.delete(key)
-        return false
+function getQuotaCachedPercent(provider: string, accountId: string, model: string): number | null {
+    const key = `${provider}:${accountId}:${model}`
+    const cached = routerQuotaCache.get(key)
+    if (cached && Date.now() < cached.expiry) {
+        return cached.percent
     }
-    return true
+    const percent = getAccountModelQuotaPercent(provider as any, accountId, model)
+    routerQuotaCache.set(key, { percent, expiry: Date.now() + ROUTER_QUOTA_CACHE_TTL })
+    return percent
 }
 
-function markRouterRateLimited(provider: string, accountId: string, durationMs: number = 30000): void {
-    const key = getRouterRateLimitKey(provider, accountId)
-    routerRateLimits.set(key, Date.now() + durationMs)
-}
+// isQuotaBlacklisted and addToQuotaBlacklist are now imported from ~/services/quota-blacklist
 
 function getFlowStickyState(flowKey: string, entriesLength: number): FlowStickyState {
     const existing = flowStickyStates.get(flowKey)
@@ -352,15 +355,48 @@ function resolveAccountEntries(config: RoutingConfig, model: string): AccountRou
 function shouldSkipFlowEntry(
     entry: RoutingEntry,
     entriesLength: number,
-    options: { ignoreRateLimit?: boolean } = {}
+    options: { ignoreRateLimit?: boolean; ignoreQuotaReserve?: boolean } = {}
 ): boolean {
     const ignoreRateLimit = options.ignoreRateLimit ?? false
+    const ignoreQuotaReserve = options.ignoreQuotaReserve ?? false
+
+    // 🆕 最高优先级：检查账户是否被手动禁用
+    if (isAccountDisabled(entry.provider, entry.accountId)) {
+        console.log(`[Router] Skipping ${entry.accountId}: account manually disabled`)
+        return true
+    }
+
+    // 🐛 修复：检查配额是否低于保留阈值
+    // 🆕 移除 entriesLength > 1 条件，单账户场景也需要检查配额
+    if (!ignoreQuotaReserve) {
+        const reservePercent = getSetting("quotaReservePercent") || 0
+
+        // 🆕 层次2：先检查黑名单，避免重复检查 0% 配额账户
+        if (isQuotaBlacklisted(entry.provider, entry.accountId, entry.modelId)) {
+            console.log(`[Router] Skipping ${entry.accountId}: ${entry.modelId} in quota blacklist`)
+            return true
+        }
+
+        // 🆕 层次1：使用缓存的配额检查，减少开销
+        const quotaPercent = getQuotaCachedPercent(entry.provider, entry.accountId, entry.modelId)
+        // 如果配额低于或等于保留阈值，跳过此账户
+        // 当 reservePercent = 0 时，只有 quotaPercent = 0% 才会被跳过
+        if (quotaPercent !== null && quotaPercent <= reservePercent) {
+            console.log(`[Router] Skipping ${entry.accountId}: ${entry.modelId} quota ${quotaPercent}% <= reserve ${reservePercent}%`)
+            // 🆕 层次2：0% 配额账户加入黑名单 5 分钟
+            if (quotaPercent === 0) {
+                addToQuotaBlacklist(entry.provider, entry.accountId, entry.modelId)
+            }
+            return true
+        }
+    }
+
     if (entry.provider === "antigravity") {
         const accountId = entry.accountId === "auto" ? undefined : entry.accountId
         if (!ignoreRateLimit && accountId && entriesLength > 1) {
-            const isLimited = accountManager.isAccountRateLimited(accountId) || isRouterRateLimited("antigravity", accountId)
-            if (isLimited) return true
-            if (accountManager.isAccountInFlight(accountId)) return true
+            // Use unified accountSelector for rate limit check
+            if (accountSelector.isRateLimited(entry.provider, accountId)) return true
+            if (accountSelector.isInFlight(entry.provider, accountId)) return true
         }
         return false
     }
@@ -375,21 +411,27 @@ function shouldSkipFlowEntry(
 
 function applyFlowRateLimit(entry: RoutingEntry, error: UpstreamError, requestModel: string): void {
     if (entry.provider === "antigravity" && entry.accountId !== "auto") {
-        accountManager
-            .markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, requestModel, { maxDurationMs: 30_000 })
-            .then((limit) => {
-                const duration = limit?.durationMs ?? 30_000
-                markRouterRateLimited("antigravity", entry.accountId, duration)
-            })
-            .catch(() => {
-                markRouterRateLimited("antigravity", entry.accountId, 30_000)
-            })
+        // Use unified accountSelector for rate limit marking
+        accountSelector.markRateLimitedFromError(
+            entry.provider,
+            entry.accountId,
+            error.status,
+            error.body || "",
+            error.retryAfter,
+            requestModel,
+            { maxDurationMs: 30_000 }
+        )
         return
     }
 
     if (entry.provider !== "antigravity") {
-        authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-        markRouterRateLimited(entry.provider, entry.accountId, 60000)
+        accountSelector.markRateLimitedFromError(
+            entry.provider,
+            entry.accountId,
+            error.status,
+            error.body || "",
+            error.retryAfter
+        )
     }
 }
 
@@ -594,6 +636,9 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
     const accountState = getAccountStickyState(request.model, entries.length)
     const startIndex = accountState?.cursor ?? 0
 
+    // 🐛 修复：添加配额检查（与 shouldSkipFlowEntry 相同逻辑）
+    const reservePercent = getSetting("quotaReservePercent") || 0
+
     for (let offset = 0; offset < entries.length; offset++) {
         const index = (startIndex + offset) % entries.length
         const entry = entries[index]
@@ -602,9 +647,37 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 if (entry.accountId === "auto") {
                     throw new RoutingError(`Account routing entry for "${request.model}" cannot use auto without smart switch expansion`, 400)
                 }
-                const isLimited = accountManager.isAccountRateLimited(entry.accountId) || isRouterRateLimited("antigravity", entry.accountId)
-                if (isLimited) continue
-                if (entries.length > 1 && accountManager.isAccountInFlight(entry.accountId)) continue
+
+                // 🆕 最高优先级：检查账户是否被手动禁用
+                if (isAccountDisabled(entry.provider, entry.accountId)) {
+                    console.log(`[Router] Skipping ${entry.accountId}: account manually disabled`)
+                    continue
+                }
+
+                // Use unified accountSelector for rate limit check
+                if (accountSelector.isRateLimited(entry.provider, entry.accountId)) continue
+                if (entries.length > 1 && accountSelector.isInFlight(entry.provider, entry.accountId)) continue
+
+                // 🐛 修复：检查配额（使用请求的模型名，而非 entry.modelId）
+                // 🆕 移除 entries.length > 1 条件，单账户场景也需要检查配额
+
+                // 🆕 层次2：先检查黑名单，避免重复检查 0% 配额账户
+                if (isQuotaBlacklisted("antigravity", entry.accountId, request.model)) {
+                    console.log(`[Router] Skipping ${entry.accountId}: ${request.model} in quota blacklist`)
+                    continue
+                }
+
+                // 🆕 层次1：使用缓存的配额检查，减少开销
+                const quotaPercent = getQuotaCachedPercent("antigravity", entry.accountId, request.model)
+                if (quotaPercent !== null && quotaPercent <= reservePercent) {
+                    console.log(`[Router] Skipping ${entry.accountId}: ${request.model} quota ${quotaPercent}% <= reserve ${reservePercent}%`)
+                    // 🆕 层次2：0% 配额账户加入黑名单 5 分钟
+                    if (quotaPercent === 0) {
+                        addToQuotaBlacklist("antigravity", entry.accountId, request.model)
+                    }
+                    continue
+                }
+
                 const accountDisplay = getAccountDisplay("antigravity", entry.accountId)
                 setRequestLogContext({ model: request.model, provider: "antigravity", account: accountDisplay })
                 const result = await createChatCompletionWithOptions({ ...request, model: request.model }, {
@@ -619,10 +692,36 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 continue
             }
 
+            // 🆕 检查非 antigravity 账户是否被手动禁用
+            if (isAccountDisabled(entry.provider, entry.accountId)) {
+                console.log(`[Router] Skipping ${entry.provider}/${entry.accountId}: account manually disabled`)
+                continue
+            }
+
             const account = authStore.getAccount(entry.provider, entry.accountId)
             if (!account) {
                 continue
             }
+
+            // 🆕 添加配额检查（与 antigravity 一致）
+
+            // 🆕 层次2：先检查黑名单，避免重复检查 0% 配额账户
+            if (isQuotaBlacklisted(entry.provider, entry.accountId, request.model)) {
+                console.log(`[Router] Skipping ${entry.provider}/${entry.accountId}: ${request.model} in quota blacklist`)
+                continue
+            }
+
+            // 🆕 层次1：使用缓存的配额检查，减少开销
+            const quotaPercent = getQuotaCachedPercent(entry.provider, entry.accountId, request.model)
+            if (quotaPercent !== null && quotaPercent <= reservePercent) {
+                console.log(`[Router] Skipping ${entry.provider}/${entry.accountId}: ${request.model} quota ${quotaPercent}% <= reserve ${reservePercent}%`)
+                // 🆕 层次2：0% 配额账户加入黑名单 5 分钟
+                if (quotaPercent === 0) {
+                    addToQuotaBlacklist(entry.provider, entry.accountId, request.model)
+                }
+                continue
+            }
+
             const accountDisplay = account.login || account.email || entry.accountId
             setRequestLogContext({ model: request.model, provider: entry.provider, account: accountDisplay })
 
@@ -652,13 +751,15 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 continue
             }
             if (error instanceof UpstreamError && shouldFallbackOnUpstream(error)) {
-                if (entry.provider === "antigravity") {
-                    accountManager.markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, request.model)
-                    markRouterRateLimited("antigravity", entry.accountId, 60000)
-                } else {
-                    authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-                    markRouterRateLimited(entry.provider, entry.accountId, 60000)
-                }
+                // Use unified accountSelector for rate limit marking
+                accountSelector.markRateLimitedFromError(
+                    entry.provider,
+                    entry.accountId,
+                    error.status,
+                    error.body || "",
+                    error.retryAfter,
+                    request.model
+                )
                 advanceAccountCursor(accountState, entries.length, index)
                 continue
             }
@@ -680,18 +781,84 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
     throw new RoutingError(`No account routing entries available for model "${request.model}"`, 400)
 }
 
+// 🆕 检测是否为画图模型
+function isImageModel(model: string): boolean {
+    return model.toLowerCase().includes("image")
+}
+
+// 🆕 从 messages 提取 prompt（用于画图）
+function extractPromptFromMessages(messages: ClaudeMessage[]): string {
+    // 找最后一个 user 消息作为 prompt
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i]
+        if (msg.role === "user") {
+            if (typeof msg.content === "string") {
+                return msg.content
+            }
+            if (Array.isArray(msg.content)) {
+                const textParts = msg.content
+                    .filter((block: any) => block.type === "text" && block.text)
+                    .map((block: any) => block.text)
+                return textParts.join("\n")
+            }
+        }
+    }
+    return ""
+}
+
 export async function createRoutedCompletion(request: RoutedRequest) {
+    // Token Saver: 检测后台任务（在其他检查之前）
+    const tokenSaverEnabled = getSetting("tokenSaverEnabled")
+    const tokenSaverResult = applyTokenSaver(request.model, request.messages, tokenSaverEnabled)
+    if (tokenSaverResult.shouldRedirect) {
+        console.log(`\x1b[33m[TokenSaver] 后台任务重定向: ${request.model} → ${tokenSaverResult.targetModel}\x1b[0m`)
+        request = { ...request, model: tokenSaverResult.targetModel }
+    }
+
     if (isHiddenCodexModel(request.model)) {
         throw new RoutingError("Model is not available", 400)
     }
-    const config = loadRoutingConfig()
-    if (isOfficialModel(request.model)) {
-        const accountEntries = resolveAccountEntries(config, request.model)
-        return createAccountCompletionWithEntries(request, accountEntries)
+
+    // 🆕 画图模型特殊处理：调用 image-generation 而非 chat
+    if (isImageModel(request.model)) {
+        const prompt = extractPromptFromMessages(request.messages)
+        if (!prompt) {
+            throw new RoutingError("No prompt found in messages for image generation", 400)
+        }
+        console.log(`[Router] Detected image model ${request.model}, redirecting to image generation`)
+        const imageResult = await generateImages({
+            model: request.model,
+            prompt,
+            n: 1,
+            response_format: "b64_json"
+        })
+        // 转换为 chat completion 格式的响应
+        const imageData = imageResult.data[0]?.b64_json || ""
+        return {
+            contentBlocks: [{
+                type: "text" as const,
+                text: imageData ? `![Generated Image](data:image/png;base64,${imageData})` : "Image generation failed"
+            }],
+            stopReason: "end_turn",
+            usage: { inputTokens: 0, outputTokens: 0 }
+        }
     }
 
-    const flowSelection = resolveFlowSelection(config, request.model)
-    return createFlowCompletionWithEntries(request, flowSelection.entries, flowSelection.flowKey)
+    const config = loadRoutingConfig()
+    const normalizedModel = normalizeModelName(request.model)
+
+    // Debug logging for model normalization
+    if (normalizedModel !== request.model) {
+        console.log(`[Router] Model normalized: ${request.model} → ${normalizedModel}`)
+    }
+
+    if (isOfficialModel(normalizedModel)) {
+        const accountEntries = resolveAccountEntries(config, normalizedModel)
+        return createAccountCompletionWithEntries({ ...request, model: normalizedModel }, accountEntries)
+    }
+
+    const flowSelection = resolveFlowSelection(config, normalizedModel)
+    return createFlowCompletionWithEntries({ ...request, model: normalizedModel }, flowSelection.entries, flowSelection.flowKey)
 }
 
 async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, entries: RoutingEntry[], flowKey?: string): AsyncGenerator<string, void, unknown> {
@@ -907,6 +1074,9 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
     const accountState = getAccountStickyState(request.model, entries.length)
     const startIndex = accountState?.cursor ?? 0
 
+    // 🐛 修复：添加配额检查（与 shouldSkipFlowEntry 相同逻辑）
+    const reservePercent = getSetting("quotaReservePercent") || 0
+
     for (let offset = 0; offset < entries.length; offset++) {
         const index = (startIndex + offset) % entries.length
         const entry = entries[index]
@@ -915,9 +1085,25 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 if (entry.accountId === "auto") {
                     throw new RoutingError(`Account routing entry for "${request.model}" cannot use auto without smart switch expansion`, 400)
                 }
-                const isLimited = accountManager.isAccountRateLimited(entry.accountId) || isRouterRateLimited("antigravity", entry.accountId)
-                if (isLimited) continue
-                if (entries.length > 1 && accountManager.isAccountInFlight(entry.accountId)) continue
+
+                // 🆕 最高优先级：检查账户是否被手动禁用
+                if (isAccountDisabled(entry.provider, entry.accountId)) {
+                    console.log(`[Router] Skipping ${entry.accountId}: account manually disabled`)
+                    continue
+                }
+
+                // Use unified accountSelector for rate limit check
+                if (accountSelector.isRateLimited(entry.provider, entry.accountId)) continue
+                if (entries.length > 1 && accountSelector.isInFlight(entry.provider, entry.accountId)) continue
+
+                // 🐛 修复：检查配额（使用请求的模型名，而非 entry.modelId）
+                // 🆕 移除 entries.length > 1 条件，单账户场景也需要检查配额
+                const quotaPercent = getAccountModelQuotaPercent("antigravity", entry.accountId, request.model)
+                if (quotaPercent !== null && quotaPercent <= reservePercent) {
+                    console.log(`[Router] Skipping ${entry.accountId}: ${request.model} quota ${quotaPercent}% <= reserve ${reservePercent}%`)
+                    continue
+                }
+
                 yield* createChatCompletionStreamWithOptions({ ...request, model: request.model }, {
                     accountId: entry.accountId,
                     allowRotation: false,
@@ -930,10 +1116,24 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 continue
             }
 
+            // 🆕 检查非 antigravity 账户是否被手动禁用
+            if (isAccountDisabled(entry.provider, entry.accountId)) {
+                console.log(`[Router] Skipping ${entry.provider}/${entry.accountId}: account manually disabled`)
+                continue
+            }
+
             const account = authStore.getAccount(entry.provider, entry.accountId)
             if (!account) {
                 continue
             }
+
+            // 🆕 添加配额检查（与 antigravity 一致）
+            const quotaPercent = getAccountModelQuotaPercent(entry.provider, entry.accountId, request.model)
+            if (quotaPercent !== null && quotaPercent <= reservePercent) {
+                console.log(`[Router] Skipping ${entry.provider}/${entry.accountId}: ${request.model} quota ${quotaPercent}% <= reserve ${reservePercent}%`)
+                continue
+            }
+
             const accountDisplay = account.login || account.email || entry.accountId
 
             let completion
@@ -988,13 +1188,15 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 continue
             }
             if (error instanceof UpstreamError && shouldFallbackOnUpstream(error)) {
-                if (entry.provider === "antigravity") {
-                    accountManager.markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, request.model)
-                    markRouterRateLimited("antigravity", entry.accountId, 60000)
-                } else {
-                    authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-                    markRouterRateLimited(entry.provider, entry.accountId, 60000)
-                }
+                // Use unified accountSelector for rate limit marking
+                accountSelector.markRateLimitedFromError(
+                    entry.provider,
+                    entry.accountId,
+                    error.status,
+                    error.body || "",
+                    error.retryAfter,
+                    request.model
+                )
                 advanceAccountCursor(accountState, entries.length, index)
                 continue
             }
@@ -1017,17 +1219,58 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
 }
 
 export async function* createRoutedCompletionStream(request: RoutedRequest): AsyncGenerator<string, void, unknown> {
+    // Token Saver: 检测后台任务（在其他检查之前）
+    const tokenSaverEnabled = getSetting("tokenSaverEnabled")
+    const tokenSaverResult = applyTokenSaver(request.model, request.messages, tokenSaverEnabled)
+    if (tokenSaverResult.shouldRedirect) {
+        console.log(`\x1b[33m[TokenSaver] 后台任务重定向: ${request.model} → ${tokenSaverResult.targetModel}\x1b[0m`)
+        request = { ...request, model: tokenSaverResult.targetModel }
+    }
+
     if (isHiddenCodexModel(request.model)) {
         throw new RoutingError("Model is not available", 400)
     }
-    const config = loadRoutingConfig()
 
-    if (isOfficialModel(request.model)) {
-        const accountEntries = resolveAccountEntries(config, request.model)
-        yield* createAccountCompletionStreamWithEntries(request, accountEntries)
+    // 🆕 画图模型特殊处理：调用 image-generation 而非 chat
+    if (isImageModel(request.model)) {
+        const prompt = extractPromptFromMessages(request.messages)
+        if (!prompt) {
+            throw new RoutingError("No prompt found in messages for image generation", 400)
+        }
+        console.log(`[Router] Detected image model ${request.model}, redirecting to image generation (stream)`)
+        const imageResult = await generateImages({
+            model: request.model,
+            prompt,
+            n: 1,
+            response_format: "b64_json"
+        })
+        // 转换为流式 chat completion 格式
+        const imageData = imageResult.data[0]?.b64_json || ""
+        const imageText = imageData ? `![Generated Image](data:image/png;base64,${imageData})` : "Image generation failed"
+
+        yield buildMessageStart(request.model)
+        yield buildContentBlockStart(0, "text")
+        yield buildTextDelta(0, imageText)
+        yield buildContentBlockStop(0)
+        yield buildMessageDelta("end_turn", { inputTokens: 0, outputTokens: 0 })
+        yield buildMessageStop()
         return
     }
 
-    const flowSelection = resolveFlowSelection(config, request.model)
-    yield* createFlowCompletionStreamWithEntries(request, flowSelection.entries, flowSelection.flowKey)
+    const config = loadRoutingConfig()
+    const normalizedModel = normalizeModelName(request.model)
+
+    // Debug logging for model normalization
+    if (normalizedModel !== request.model) {
+        console.log(`[Router] Model normalized: ${request.model} → ${normalizedModel}`)
+    }
+
+    if (isOfficialModel(normalizedModel)) {
+        const accountEntries = resolveAccountEntries(config, normalizedModel)
+        yield* createAccountCompletionStreamWithEntries({ ...request, model: normalizedModel }, accountEntries)
+        return
+    }
+
+    const flowSelection = resolveFlowSelection(config, normalizedModel)
+    yield* createFlowCompletionStreamWithEntries({ ...request, model: normalizedModel }, flowSelection.entries, flowSelection.flowKey)
 }

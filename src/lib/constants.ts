@@ -3,6 +3,32 @@
  * Centralized configuration values to avoid magic numbers
  */
 
+import { platform, arch } from "os"
+
+// ============================================
+// Version & User-Agent Constants
+// ============================================
+
+/** 
+ * Antigravity client version - FALLBACK value
+ * 
+ * 优先使用 version-fetcher.ts 中的自动获取功能
+ * 此值仅作为网络请求失败时的后备
+ * 
+ * 如需手动更新，参考: https://marketplace.visualstudio.com/items?itemName=Google.geminicodeassist
+ */
+export const ANTIGRAVITY_FALLBACK_VERSION = "1.15.8"
+
+/** Build User-Agent string dynamically based on current platform (同步版本，使用 fallback) */
+export function getAntigravityUserAgent(): string {
+    const os = platform()
+    const architecture = arch()
+    return `antigravity/${ANTIGRAVITY_FALLBACK_VERSION} ${os}/${architecture}`
+}
+
+/** Static User-Agent for environments that can't call functions (e.g., Rust) */
+export const ANTIGRAVITY_USER_AGENT_STATIC = `antigravity/${ANTIGRAVITY_FALLBACK_VERSION} windows/amd64`
+
 // ============================================
 // Time Constants (in milliseconds)
 // ============================================

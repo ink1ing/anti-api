@@ -22,7 +22,8 @@ use tracing::{info, warn};
 
 // ===== Configuration =====
 const LISTEN_PORT: u16 = 8965;
-const USER_AGENT: &str = "antigravity/1.11.9 windows/amd64";
+// NOTE: Keep in sync with ANTIGRAVITY_VERSION in src/lib/constants.ts
+const USER_AGENT: &str = "antigravity/1.15.8 windows/amd64";
 const MIN_REQUEST_INTERVAL_MS: u64 = 500; // 500ms 最小间隔
 
 // API endpoints

@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { authStore } from "~/services/auth/store"
 import { getProviderModels } from "~/services/routing/models"
-import { loadRoutingConfig, saveRoutingConfig, setActiveFlow, type RoutingEntry, type RoutingFlow, type AccountRoutingConfig } from "~/services/routing/config"
+import { loadRoutingConfig, saveRoutingConfig, setActiveFlow, toggleAccountDisabled, type RoutingEntry, type RoutingFlow, type AccountRoutingConfig } from "~/services/routing/config"
 import { accountManager } from "~/services/antigravity/account-manager"
 import { getAggregatedQuota } from "~/services/quota-aggregator"
 import { readFileSync } from "fs"
@@ -189,4 +189,15 @@ routingRouter.post("/cleanup", async (c) => {
         removedCount,
         config: newConfig
     })
+})
+
+// 🆕 切换账户禁用状态
+routingRouter.post("/toggle-account", async (c) => {
+    const body = await c.req.json<{ provider: string; accountId: string }>()
+    if (!body.provider || !body.accountId) {
+        return c.json({ error: "Missing provider or accountId" }, 400)
+    }
+    const result = toggleAccountDisabled(body.provider, body.accountId)
+    console.log(`[Routing] Account ${body.provider}/${body.accountId} ${result.disabled ? "DISABLED" : "ENABLED"}`)
+    return c.json({ success: true, disabled: result.disabled })
 })

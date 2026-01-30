@@ -12,6 +12,7 @@ import { determineRetryStrategy, applyRetryDelay } from "~/lib/retry"
 import { UpstreamError } from "~/lib/error"
 import { cleanJsonSchemaForGemini } from "~/lib/json-schema-cleaner"
 import { formatLogTime, setRequestLogContext } from "~/lib/logger"
+import { getAntigravityUserAgentSync } from "~/lib/version-fetcher"
 
 accountManager.load()
 
@@ -21,7 +22,6 @@ const ANTIGRAVITY_BASE_URLS = [
     "https://cloudcode-pa.googleapis.com",
 ]
 const STREAM_ENDPOINT = "/v1internal:streamGenerateContent"
-const DEFAULT_USER_AGENT = "antigravity/1.11.9 windows/amd64"
 const MAX_RETRY_ATTEMPTS = 1  // v2.0.1 恢复：简化重试，避免级联 429
 const MAX_NON_QUOTA_429_RETRIES = 2  // Non-quota 429 retries before switching accounts
 const MAX_NON_QUOTA_429_WAIT_MS = 4000  // Upper bound for non-quota 429 wait time
@@ -91,11 +91,20 @@ function isQuotaExhaustedErrorText(errorText: string): boolean {
                     if (detail?.reason === "QUOTA_EXHAUSTED") return true
                 }
             }
-            const message = json?.error?.message
-            if (typeof message === "string") {
-                const lower = message.toLowerCase()
-                if (lower.includes("quota") && lower.includes("reset")) return true
+
+            // 🔧 修复：检查 status 和 message
+            const status = json?.error?.status
+            const message = json?.error?.message || ""
+            const lower = message.toLowerCase()
+
+            // RESOURCE_EXHAUSTED + 包含 "quota" = 配额耗尽
+            // 例如: {"error": {"status": "RESOURCE_EXHAUSTED", "message": "Resource has been exhausted (e.g. check quota)."}}
+            if (status === "RESOURCE_EXHAUSTED" && lower.includes("quota")) {
+                return true
             }
+
+            // 原有逻辑保留
+            if (lower.includes("quota") && lower.includes("reset")) return true
         } catch {
             // ignore parse errors
         }
@@ -501,8 +510,20 @@ function parseApiResponse(rawResponse: string): ChatResponse {
 }
 
 // 429 is handled separately - it's account-specific, not endpoint-specific
-function shouldTryNextEndpoint(statusCode: number): boolean {
-    return statusCode === 408 || statusCode === 404 || statusCode >= 500
+// 🆕 优化 404 处理：区分 endpoint 不存在和模型/权限问题
+function shouldTryNextEndpoint(statusCode: number, errorText?: string): boolean {
+    if (statusCode === 408 || statusCode >= 500) return true
+
+    if (statusCode === 404) {
+        const lower = (errorText || "").toLowerCase()
+        // 模型不存在或权限问题 - 不应尝试下一个 endpoint
+        if (lower.includes("not found") && !lower.includes("endpoint")) {
+            return false
+        }
+        // Endpoint 不存在 - 尝试下一个
+        return true
+    }
+    return false
 }
 
 async function sendRequestSse(
@@ -534,7 +555,7 @@ async function sendRequestSse(
                     headers: {
                         "Content-Type": "application/json",
                         "Authorization": "Bearer " + currentAccessToken,
-                        "User-Agent": DEFAULT_USER_AGENT,
+                        "User-Agent": getAntigravityUserAgentSync(),
                         "Accept": "text/event-stream",
                     },
                     body: JSON.stringify(antigravityRequest),
@@ -590,11 +611,15 @@ async function sendRequestSse(
                             currentAccountId,
                             lastStatusCode,
                             lastErrorText,
-                            lastRetryAfterHeader
+                            lastRetryAfterHeader,
+                            modelName  // ✅ 传递 modelId
                         )
 
                         if (limitResult?.reason === "quota_exhausted") {
                             accountManager.moveToEndOfQueue(currentAccountId)
+                            // ✅ 新增：加入配额黑名单
+                            const { addToQuotaBlacklist } = await import("~/services/quota-blacklist")
+                            addToQuotaBlacklist("antigravity", currentAccountId, modelName || "")
                         }
 
                         if (allowRotation && accountManager.count() > 1) {
@@ -658,7 +683,7 @@ async function sendRequestSse(
                     throw new UpstreamError("antigravity", 401, lastErrorText, lastRetryAfterHeader)
                 }
 
-                if (shouldTryNextEndpoint(lastStatusCode)) {
+                if (shouldTryNextEndpoint(lastStatusCode, lastErrorText)) {
                     lastError = new Error("SSE API error: " + response.status)
                     continue
                 }
@@ -732,7 +757,7 @@ async function* sendRequestSseStreaming(
                     headers: {
                         "Content-Type": "application/json",
                         "Authorization": "Bearer " + currentAccessToken,
-                        "User-Agent": DEFAULT_USER_AGENT,
+                        "User-Agent": getAntigravityUserAgentSync(),
                         "Accept": "text/event-stream",
                     },
                     body: JSON.stringify(antigravityRequest),
@@ -744,9 +769,18 @@ async function* sendRequestSseStreaming(
                     if (response.status === 429 && currentAccountId) {
                         const quotaExhausted = isQuotaExhaustedErrorText(errorText)
                         if (quotaExhausted) {
-                            const limitResult = await accountManager.markRateLimitedFromError(currentAccountId, response.status, errorText)
+                            const limitResult = await accountManager.markRateLimitedFromError(
+                                currentAccountId,
+                                response.status,
+                                errorText,
+                                undefined,
+                                modelName  // ✅ 传递 modelId
+                            )
                             if (limitResult?.reason === "quota_exhausted") {
                                 accountManager.moveToEndOfQueue(currentAccountId)
+                                // ✅ 新增：加入配额黑名单
+                                const { addToQuotaBlacklist } = await import("~/services/quota-blacklist")
+                                addToQuotaBlacklist("antigravity", currentAccountId, modelName || "")
                             }
                             lastError = new UpstreamError("antigravity", response.status, errorText, response.headers.get("retry-after") || undefined)
                             throw lastError
@@ -778,7 +812,7 @@ async function* sendRequestSseStreaming(
                         ;(upstream as any).retryable = true
                         throw upstream
                     }
-                    if (shouldTryNextEndpoint(response.status)) {
+                    if (shouldTryNextEndpoint(response.status, errorText)) {
                         lastError = new UpstreamError("antigravity", response.status, errorText, response.headers.get("retry-after") || undefined)
                         continue
                     }
@@ -951,7 +985,12 @@ export async function createChatCompletionWithOptions(
     let releaseAccountLock: (() => void) | null = null
 
     if (options.accountId) {
-        const account = await accountManager.getAccountById(options.accountId)
+        // 🆕 检查账户是否被禁用
+        const { isAccountDisabled } = await import("~/services/routing/config")
+        if (isAccountDisabled("antigravity", options.accountId)) {
+            throw new UpstreamError("antigravity", 429, `Account disabled: ${options.accountId}`)
+        }
+        const account = await accountManager.getAccountById(options.accountId, request.model)
         if (!account) {
             throw new UpstreamError("antigravity", 429, `Account unavailable: ${options.accountId}`)
         }
@@ -960,16 +999,16 @@ export async function createChatCompletionWithOptions(
         projectId = account.projectId
         accountEmail = account.email
     } else {
-        const account = await accountManager.getNextAvailableAccount()
+        // 🐛 修复：使用 request.model 而非未定义的 modelName
+        const account = await accountManager.getNextAvailableAccount(false, request.model)
         if (account) {
             accessToken = account.accessToken
             accountId = account.accountId
             projectId = account.projectId
             accountEmail = account.email
         } else {
-            accessToken = await getAccessToken()
-            projectId = state.cloudaicompanionProject || undefined
-            accountEmail = state.userEmail || undefined
+            // 🆕 修复：不再 fallback 到 getAccessToken()，直接抛出错误
+            throw new UpstreamError("antigravity", 429, "No available accounts (all disabled, insufficient quota, or rate limited)")
         }
     }
 
@@ -1034,7 +1073,12 @@ export async function* createChatCompletionStreamWithOptions(
     let releaseAccountLock: (() => void) | null = null
 
     if (options.accountId) {
-        const account = await accountManager.getAccountById(options.accountId)
+        // 🆕 检查账户是否被禁用
+        const { isAccountDisabled } = await import("~/services/routing/config")
+        if (isAccountDisabled("antigravity", options.accountId)) {
+            throw new UpstreamError("antigravity", 429, `Account disabled: ${options.accountId}`)
+        }
+        const account = await accountManager.getAccountById(options.accountId, request.model)
         if (!account) {
             throw new UpstreamError("antigravity", 429, `Account unavailable: ${options.accountId}`)
         }
@@ -1043,16 +1087,16 @@ export async function* createChatCompletionStreamWithOptions(
         projectId = account.projectId
         accountEmail = account.email
     } else {
-        const account = await accountManager.getNextAvailableAccount()
+        // 🐛 修复：使用 request.model 而非未定义的 modelName
+        const account = await accountManager.getNextAvailableAccount(false, request.model)
         if (account) {
             accessToken = account.accessToken
             accountId = account.accountId
             projectId = account.projectId
             accountEmail = account.email
         } else {
-            accessToken = await getAccessToken()
-            projectId = state.cloudaicompanionProject || undefined
-            accountEmail = state.userEmail || undefined
+            // 🆕 修复：不再 fallback 到 getAccessToken()，直接抛出错误
+            throw new UpstreamError("antigravity", 429, "No available accounts (all disabled, insufficient quota, or rate limited)")
         }
     }
 

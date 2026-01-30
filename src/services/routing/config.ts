@@ -46,6 +46,7 @@ export interface RoutingConfig {
     flows: RoutingFlow[]
     activeFlowId?: string  // When set, all requests use this flow
     accountRouting?: AccountRoutingConfig
+    disabledAccounts?: string[]  // "provider:accountId" 格式，手动禁用的账户
 }
 
 const ROUTING_FILE = join(getDataDir(), "routing.json")
@@ -113,6 +114,7 @@ function normalizeConfig(raw: Partial<RoutingConfig> & { entries?: RoutingEntry[
                 .filter((route): route is AccountRoutingRoute => !!route)
             : [],
     }
+    const disabledAccounts = Array.isArray(raw.disabledAccounts) ? raw.disabledAccounts : []
 
     if (Array.isArray(raw.flows)) {
         const flows = raw.flows.flatMap((flow, index) => {
@@ -132,6 +134,7 @@ function normalizeConfig(raw: Partial<RoutingConfig> & { entries?: RoutingEntry[
             flows,
             activeFlowId,
             accountRouting,
+            disabledAccounts,
         }
     }
 
@@ -146,16 +149,17 @@ function normalizeConfig(raw: Partial<RoutingConfig> & { entries?: RoutingEntry[
                 ? [{ id: randomUUID(), name: "default", entries: legacyEntries }]
                 : [],
             accountRouting,
+            disabledAccounts,
         }
     }
 
-    return { version: CURRENT_VERSION, updatedAt, flows: [], accountRouting }
+    return { version: CURRENT_VERSION, updatedAt, flows: [], accountRouting, disabledAccounts }
 }
 
 export function loadRoutingConfig(): RoutingConfig {
     try {
         if (!existsSync(ROUTING_FILE)) {
-            return { version: CURRENT_VERSION, updatedAt: new Date().toISOString(), flows: [], accountRouting: { smartSwitch: false, routes: [] } }
+            return { version: CURRENT_VERSION, updatedAt: new Date().toISOString(), flows: [], accountRouting: { smartSwitch: false, routes: [] }, disabledAccounts: [] }
         }
         const raw = JSON.parse(readFileSync(ROUTING_FILE, "utf-8")) as Partial<RoutingConfig> & {
             entries?: RoutingEntry[]
@@ -163,14 +167,15 @@ export function loadRoutingConfig(): RoutingConfig {
         return normalizeConfig(raw)
     } catch (error) {
         consola.warn("Failed to load routing config:", error)
-        return { version: CURRENT_VERSION, updatedAt: new Date().toISOString(), flows: [], accountRouting: { smartSwitch: false, routes: [] } }
+        return { version: CURRENT_VERSION, updatedAt: new Date().toISOString(), flows: [], accountRouting: { smartSwitch: false, routes: [] }, disabledAccounts: [] }
     }
 }
 
 export function saveRoutingConfig(
     flows: RoutingFlow[],
     activeFlowId?: string,
-    accountRouting?: AccountRoutingConfig
+    accountRouting?: AccountRoutingConfig,
+    disabledAccounts?: string[]
 ): RoutingConfig {
     ensureDir()
     // Preserve existing activeFlowId if not explicitly provided
@@ -181,9 +186,42 @@ export function saveRoutingConfig(
         flows: flows.map((flow, index) => normalizeFlow(flow, index)),
         activeFlowId: activeFlowId !== undefined ? activeFlowId : existing.activeFlowId,
         accountRouting: accountRouting !== undefined ? accountRouting : existing.accountRouting,
+        disabledAccounts: disabledAccounts !== undefined ? disabledAccounts : existing.disabledAccounts,
     }
     writeFileSync(ROUTING_FILE, JSON.stringify(config, null, 2))
     return config
+}
+
+// 检查账户是否被禁用
+export function isAccountDisabled(provider: string, accountId: string): boolean {
+    const config = loadRoutingConfig()
+    const key = `${provider}:${accountId}`
+    return config.disabledAccounts?.includes(key) ?? false
+}
+
+// 获取禁用账户列表
+export function getDisabledAccounts(): string[] {
+    const config = loadRoutingConfig()
+    return config.disabledAccounts || []
+}
+
+// 切换账户禁用状态
+export function toggleAccountDisabled(provider: string, accountId: string): { disabled: boolean; config: RoutingConfig } {
+    const config = loadRoutingConfig()
+    const key = `${provider}:${accountId}`
+    const disabledAccounts = config.disabledAccounts || []
+
+    const index = disabledAccounts.indexOf(key)
+    if (index >= 0) {
+        // 已禁用，移除禁用
+        disabledAccounts.splice(index, 1)
+    } else {
+        // 未禁用，添加禁用
+        disabledAccounts.push(key)
+    }
+
+    const newConfig = saveRoutingConfig(config.flows, config.activeFlowId, config.accountRouting, disabledAccounts)
+    return { disabled: index < 0, config: newConfig }
 }
 
 export function setActiveFlow(flowId: string | null): RoutingConfig {

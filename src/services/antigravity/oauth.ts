@@ -5,6 +5,9 @@
 
 import https from "https"
 import { state } from "~/lib/state"
+import consola from "consola"
+
+import { getAntigravityUserAgentSync } from "~/lib/version-fetcher"
 
 // OAuth 配置（来自 CLIProxyAPI）
 export const OAUTH_CONFIG = {
@@ -24,7 +27,10 @@ export const OAUTH_CONFIG = {
     ],
 }
 
-const PROJECT_USER_AGENT = "antigravity/1.11.9 windows/amd64"
+// 使用函数调用而不是常量，以获取缓存后的最新版本
+function getProjectUserAgent(): string {
+    return getAntigravityUserAgentSync()
+}
 
 /**
  * 生成随机 state 用于 CSRF 保护
@@ -117,7 +123,7 @@ export async function getProjectID(accessToken: string): Promise<string | null> 
             headers: {
                 Authorization: `Bearer ${accessToken}`,
                 "Content-Type": "application/json",
-                "User-Agent": PROJECT_USER_AGENT,
+                "User-Agent": getProjectUserAgent(),
             },
             body: JSON.stringify({
                 metadata: {
@@ -293,32 +299,45 @@ export function startOAuthCallbackServer(): Promise<{
             callbackResolve = res
         })
 
-        const server = Bun.serve({
-            port: OAUTH_CONFIG.callbackPort,
-            fetch(req) {
-                const url = new URL(req.url)
+        consola.info(`[OAuth] Starting callback server on 0.0.0.0:${OAUTH_CONFIG.callbackPort}...`)
 
-                if (url.pathname === "/oauth-callback") {
-                    const code = url.searchParams.get("code")
-                    const state = url.searchParams.get("state")
-                    const error = url.searchParams.get("error")
+        try {
+            const server = Bun.serve({
+                port: OAUTH_CONFIG.callbackPort,
+                hostname: "0.0.0.0",  // 绑定到所有网络接口，Docker 环境必需
+                fetch(req) {
+                    const url = new URL(req.url)
+                    consola.info(`[OAuth] Received request: ${req.method} ${url.pathname}`)
 
-                    if (callbackResolve) {
-                        callbackResolve({ code: code || undefined, state: state || undefined, error: error || undefined })
+                    if (url.pathname === "/oauth-callback") {
+                        const code = url.searchParams.get("code")
+                        const state = url.searchParams.get("state")
+                        const error = url.searchParams.get("error")
+
+                        consola.info(`[OAuth] Callback received - code: ${code ? "yes" : "no"}, state: ${state ? "yes" : "no"}, error: ${error || "none"}`)
+
+                        if (callbackResolve) {
+                            callbackResolve({ code: code || undefined, state: state || undefined, error: error || undefined })
+                        }
+
+                        // Redirect to official success page
+                        return Response.redirect("https://antigravity.google/auth-success", 302)
                     }
 
-                    // Redirect to official success page
-                    return Response.redirect("https://antigravity.google/auth-success", 302)
-                }
+                    return new Response("Not Found", { status: 404 })
+                },
+            })
 
-                return new Response("Not Found", { status: 404 })
-            },
-        })
+            consola.success(`[OAuth] Callback server started successfully on port ${OAUTH_CONFIG.callbackPort}`)
 
-        resolve({
-            server,
-            port: OAUTH_CONFIG.callbackPort,
-            waitForCallback: () => callbackPromise,
-        })
+            resolve({
+                server,
+                port: OAUTH_CONFIG.callbackPort,
+                waitForCallback: () => callbackPromise,
+            })
+        } catch (error) {
+            consola.error(`[OAuth] Failed to start callback server:`, error)
+            reject(new Error(`Failed to start server. Is port ${OAUTH_CONFIG.callbackPort} in use?`))
+        }
     })
 }

@@ -1,16 +1,50 @@
 services:
   anti-api:
-    build:
-      context: .
-      args:
-        BUN_IMAGE: ${BUN_IMAGE:-ghcr.io/oven-sh/bun:1.1.38}
+    # Use pre-built image from GitHub Container Registry
+    image: ghcr.io/qingwo1991-debug/anti-api:latest
+    # Uncomment below to build locally instead
+    # build:
+    #   context: .
+    #   args:
+    #     BUN_IMAGE: ${BUN_IMAGE:-oven/bun:1.1.38-alpine}
     ports:
-      - "8964:8964"
-      - "51121:51121"
+      - "8964:8964"      # Main API server port
+      - "51121:51121"    # Antigravity discovery port
     environment:
+      # Data directory inside container
       ANTI_API_DATA_DIR: /app/data
+
+      # OAuth settings - don't auto-open browser in Docker
       ANTI_API_OAUTH_NO_OPEN: "1"
       ANTI_API_NO_OPEN: "1"
+
+      # Optional: Enable verbose logging
+      # ANTI_API_VERBOSE: "1"
+
+      # Optional: Custom port (default: 8964)
+      # ANTI_API_PORT: "8964"
+
+      # Optional: Enable ngrok tunnel
+      # ANTI_API_NGROK: "1"
+
+      # Optional: Disable auto-refresh
+      # ANTI_API_NO_AUTO_REFRESH: "1"
+
+      # Optional: Disable usage tracking
+      # ANTI_API_NO_TRACK_USAGE: "1"
     volumes:
+      # Persist data (accounts, settings, logs)
       - ${HOME}/.anti-api:/app/data
+      # Alternative for Windows: use named volume
+      # - anti-api-data:/app/data
     restart: unless-stopped
+    # Optional: Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2G
+
+# Uncomment if using named volume
+# volumes:
+#   anti-api-data:

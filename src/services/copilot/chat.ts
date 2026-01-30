@@ -66,6 +66,61 @@ function mapCopilotModelName(model: string): string {
     return model
 }
 
+/**
+ * 验证并映射模型名到 Copilot 支持的格式
+ *
+ * @param apiToken - Copilot API token
+ * @param requestedModel - 规范化后的模型名（如 claude-sonnet-4-5-thinking）
+ * @returns Copilot 支持的模型名（如 claude-sonnet-4）
+ * @throws Error 如果模型不受支持且无可用回退
+ */
+async function validateAndMapModel(
+    apiToken: string,
+    requestedModel: string
+): Promise<string> {
+    // 第一步：应用现有映射规则
+    const mappedModel = mapCopilotModelName(requestedModel)
+
+    // 第二步：获取 Copilot 可用模型列表（带缓存）
+    const availableModels = await fetchCopilotModels(apiToken)
+
+    // 如果无法获取模型列表，尝试使用映射后的模型
+    if (availableModels.length === 0) {
+        consola.warn(`[Copilot] Could not fetch model list, attempting with: ${mappedModel}`)
+        return mappedModel
+    }
+
+    const modelIds = availableModels.map(m => m.id)
+    consola.debug(`[Copilot] Available models: ${modelIds.slice(0, 10).join(', ')}`)
+
+    // 第三步：验证映射后的模型是否支持
+    if (modelIds.includes(mappedModel)) {
+        return mappedModel
+    }
+
+    // 第四步：尝试回退映射
+    const fallbacks: Record<string, string[]> = {
+        "claude-sonnet-4.5": ["claude-sonnet-4"],
+        "claude-opus-4.5": ["claude-opus-4.1"],
+        "claude-haiku-4.5": ["claude-haiku-4"],
+    }
+
+    const fallbackList = fallbacks[mappedModel] || []
+    for (const fallback of fallbackList) {
+        if (modelIds.includes(fallback)) {
+            consola.info(`[Copilot] Model ${mappedModel} not available, using fallback: ${fallback}`)
+            return fallback
+        }
+    }
+
+    // 第五步：所有尝试失败，抛出错误让路由切换 provider
+    const errorMsg = `Copilot does not support model: ${requestedModel} (mapped: ${mappedModel}). Available: ${modelIds.slice(0, 5).join(', ')}`
+    consola.warn(`[Copilot] ${errorMsg}`)
+
+    // 抛出 Error（不是 UpstreamError），让 router 捕获后跳过此 provider
+    throw new Error(errorMsg)
+}
+
 interface OpenAIResponse {
     choices: Array<{
         message?: { content?: string | null; tool_calls?: any[] }
@@ -83,11 +138,8 @@ export async function createCopilotCompletion(
 ) {
     const apiToken = await getCopilotApiToken(account)
 
-    // Fetch and log available models (first call will log, subsequent uses cache)
-    await fetchCopilotModels(apiToken)
-
-    // Map model name to Copilot-compatible format
-    const mappedModel = mapCopilotModelName(model)
+    // Validate and map model name with automatic fallback
+    const mappedModel = await validateAndMapModel(apiToken, model)
 
     const requestBody = {
         model: mappedModel,
@@ -109,7 +161,7 @@ export async function createCopilotCompletion(
     })
 
     if (response.status < 200 || response.status >= 300) {
-        consola.error(`Copilot error ${response.status} for model ${mappedModel}:`, response.text.slice(0, 500))
+        consola.error(`[Copilot] Error ${response.status} for model ${mappedModel} (requested: ${model}):`, response.text.slice(0, 500))
         throw new UpstreamError("copilot", response.status, response.text, undefined)
     }
 

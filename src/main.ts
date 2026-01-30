@@ -15,6 +15,7 @@ import { initAuth, isAuthenticated, saveAuth, startOAuthLogin } from "./services
 import { getProjectID } from "./services/antigravity/oauth"
 import { accountManager } from "./services/antigravity/account-manager"
 import { getSetting } from "./services/settings"
+import { warmupVersionCache } from "./lib/version-fetcher"
 
 /**
  * 打开浏览器
@@ -46,6 +47,9 @@ function openBrowser(url: string): void {
     }
 }
 
+// 版本号 - 用于确认镜像版本
+const VERSION = "2.4.5"
+
 const start = defineCommand({
     meta: {
         name: "start",
@@ -70,10 +74,12 @@ const start = defineCommand({
         state.port = parseInt(args.port, 10)
         state.verbose = args.verbose
 
-        if (args.verbose) {
+        // 检查命令行参数或环境变量
+        const isVerbose = args.verbose || process.env.ANTI_API_VERBOSE === "1"
+        if (isVerbose) {
             consola.level = 4 // debug
         } else {
-            consola.level = 0 // silent
+            consola.level = 3 // info (默认显示 info 及以上级别)
         }
 
         // 尝试加载已保存的 OAuth 认证
@@ -112,6 +118,10 @@ const start = defineCommand({
 
         // 打印启动 banner
         const { logStartup, logStartupSuccess } = await import("./lib/logger")
+        console.log(`\n🚀 Anti-API v${VERSION} starting...`)
+
+        // 预热 Antigravity 版本缓存（从 Marketplace 获取最新版本）
+        await warmupVersionCache()
         logStartup(state.port)
 
         // 启动服务器

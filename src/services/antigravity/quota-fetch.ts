@@ -1,9 +1,9 @@
 import { fetchInsecureJson, getProjectID } from "./oauth"
 import { generateMockProjectId } from "./project-id"
 import { UpstreamError } from "~/lib/error"
+import { getAntigravityUserAgentSync } from "~/lib/version-fetcher"
 
 const CLOUD_CODE_BASE_URL = "https://cloudcode-pa.googleapis.com"
-const USER_AGENT = "antigravity/1.11.3 windows/amd64"
 
 export type AntigravityModelInfo = {
     remainingFraction?: number
@@ -22,7 +22,7 @@ export async function fetchAntigravityModels(
         headers: {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
-            "User-Agent": USER_AGENT,
+            "User-Agent": getAntigravityUserAgentSync(),
         },
         body: JSON.stringify({ project }),
     })

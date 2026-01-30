@@ -21,6 +21,13 @@ export interface AppSettings {
     trackUsage: boolean
     optimizeQuotaSort: boolean
     captureLogs: boolean
+    // 配额保留设置：当账户配额低于此百分比时切换到下一个账户
+    quotaReservePercent: number
+    // API Key 安全：保护 API 端点
+    apiKey: string
+    apiKeyEnabled: boolean
+    // Token Saver：后台任务重定向到免费模型
+    tokenSaverEnabled: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -34,6 +41,19 @@ const DEFAULT_SETTINGS: AppSettings = {
     trackUsage: true,
     optimizeQuotaSort: false,
     captureLogs: false,
+    quotaReservePercent: 0, // 默认不保留，0 表示用尽才切换
+    apiKey: "", // 首次加载时自动生成
+    apiKeyEnabled: false, // 默认关闭，用户可手动开启
+    tokenSaverEnabled: true, // 默认开启，后台任务自动重定向到免费模型
+}
+
+function generateApiKey(): string {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    let key = "anti-"
+    for (let i = 0; i < 24; i++) {
+        key += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return key
 }
 
 function ensureSettingsDir(): void {
@@ -41,23 +61,35 @@ function ensureSettingsDir(): void {
 }
 
 export function loadSettings(): AppSettings {
+    ensureSettingsDir()
+    let settings = { ...DEFAULT_SETTINGS }
     try {
-        ensureSettingsDir()
         if (existsSync(SETTINGS_FILE)) {
             const data = readFileSync(SETTINGS_FILE, "utf-8")
-            return { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
+            settings = { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
         }
     } catch (error) {
-        // Ignore errors, return defaults
+        // Ignore errors, use defaults
     }
-    return { ...DEFAULT_SETTINGS }
+    // 自动生成 API Key（如果为空）
+    if (!settings.apiKey) {
+        settings.apiKey = generateApiKey()
+        writeSettingsFile(settings)
+    }
+    return settings
 }
 
-export function saveSettings(settings: Partial<AppSettings>): AppSettings {
-    ensureSettingsDir()
+export function regenerateApiKey(): string {
     const current = loadSettings()
-    const updated = { ...current, ...settings }
-    const payload = JSON.stringify(updated, null, 2)
+    const newKey = generateApiKey()
+    current.apiKey = newKey
+    writeSettingsFile(current)
+    return newKey
+}
+
+function writeSettingsFile(settings: AppSettings): void {
+    ensureSettingsDir()
+    const payload = JSON.stringify(settings, null, 2)
     const tmpFile = `${SETTINGS_FILE}.tmp`
     writeFileSync(tmpFile, payload, "utf-8")
     try {
@@ -66,10 +98,16 @@ export function saveSettings(settings: Partial<AppSettings>): AppSettings {
         try {
             rmSync(SETTINGS_FILE, { force: true })
         } catch {
-            // Ignore cleanup failures, rename will throw if it still can't proceed.
+            // Ignore cleanup failures
         }
         renameSync(tmpFile, SETTINGS_FILE)
     }
+}
+
+export function saveSettings(settings: Partial<AppSettings>): AppSettings {
+    const current = loadSettings()
+    const updated = { ...current, ...settings }
+    writeSettingsFile(updated)
     return updated
 }
 

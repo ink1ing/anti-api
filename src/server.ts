@@ -10,6 +10,7 @@ import consola from "consola"
 
 import { messageRoutes } from "./routes/messages/route"
 import { openaiRoutes } from "./routes/openai/route"
+import { imageRoutes } from "./routes/images/route"
 import { authRouter } from "./routes/auth/route"
 import { remoteRouter } from "./routes/remote/route"
 import { routingRouter } from "./routes/routing/route"
@@ -20,7 +21,7 @@ import { initAuth, isAuthenticated } from "./services/antigravity/login"
 import { accountManager } from "./services/antigravity/account-manager"
 import { loadRoutingConfig } from "./services/routing/config"
 import { importCodexAuthSources } from "./services/codex/oauth"
-import { loadSettings, saveSettings } from "./services/settings"
+import { loadSettings, saveSettings, regenerateApiKey } from "./services/settings"
 import { pingAccount } from "./services/ping"
 import { summarizeUpstreamError, UpstreamError } from "./lib/error"
 import { authStore } from "./services/auth/store"
@@ -59,6 +60,67 @@ server.use(async (c, next) => {
     // All successful requests are silent (detailed 200 logs are handled elsewhere)
 })
 server.use(cors())
+
+// API Key 认证白名单（不需要认证的路径）
+const API_KEY_WHITELIST = [
+    "/",
+    "/health",
+    "/quota",
+    "/quota/json",
+    "/routing",
+    "/remote-panel",
+    "/settings",
+    "/auth",
+    "/logs",
+    "/remote",
+    "/tunnel/status",
+    "/accounts",
+    "/usage",
+    "/models",      // 模型列表（无前缀）
+    "/v1/models",   // 模型列表（OpenAI 格式）
+    "/v1beta/models", // 模型列表（Anthropic 格式）
+]
+
+// API Key 认证中间件
+server.use(async (c, next) => {
+    const settings = loadSettings()
+
+    // 如果未启用 API Key 认证，直接放行
+    if (!settings.apiKeyEnabled) {
+        return next()
+    }
+
+    const path = c.req.path
+
+    // 检查白名单
+    for (const prefix of API_KEY_WHITELIST) {
+        if (path === prefix || path.startsWith(prefix + "/")) {
+            return next()
+        }
+    }
+
+    // 检查 API Key
+    const authHeader = c.req.header("Authorization") || ""
+    const xApiKey = c.req.header("x-api-key") || ""
+
+    let providedKey = ""
+    if (authHeader.toLowerCase().startsWith("bearer ")) {
+        providedKey = authHeader.slice(7).trim()
+    } else if (xApiKey) {
+        providedKey = xApiKey.trim()
+    }
+
+    if (!providedKey || providedKey !== settings.apiKey) {
+        return c.json({
+            error: {
+                type: "authentication_error",
+                message: "Invalid API key. Provide a valid key via Authorization: Bearer <key> or x-api-key header."
+            }
+        }, 401)
+    }
+
+    return next()
+})
 
 // 启动时自动加载已保存的认证
 initAuth()
@@ -123,6 +185,12 @@ server.post("/settings", async (c) => {
     return c.json(updated)
 })
 
+// Settings API - 重新生成 API Key
+server.post("/settings/regenerate-api-key", (c) => {
+    const newKey = regenerateApiKey()
+    return c.json({ apiKey: newKey })
+})
+
 // Usage Tracking API
 import { getUsage, resetUsage } from "./services/usage-tracker"
 
@@ -137,6 +205,9 @@ server.post("/usage/reset", (c) => {
 
 // OpenAI 兼容端点
 server.route("/v1/chat/completions", openaiRoutes)
+
+// OpenAI Image Generation 端点
+server.route("/v1/images", imageRoutes)
 
 // Anthropic兼容端点
 server.route("/v1/messages", messageRoutes)

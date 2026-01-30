@@ -10,21 +10,101 @@
         type="image/x-icon">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* Theme Variables (Default: Midnight) */
         :root {
-            --bg-black: #0a0a0a;
-            --panel: rgba(17, 17, 17, 0.9);
-            --panel-border: rgba(59, 42, 84, 0.4);
+            --theme-bg: #000000;
+            --theme-card-bg: transparent;
+            --theme-card-border: rgba(55, 65, 81, 0.5);
+            --theme-text: #d1d5db;
+            --theme-text-muted: #6b7280;
+            --theme-accent: #22d3ee;
+        }
+
+        /* Theme: Midnight (Default) */
+        [data-theme="midnight"] {
+            --theme-bg: #000000;
+            --theme-card-bg: transparent;
+            --theme-card-border: rgba(55, 65, 81, 0.5);
+            --theme-text: #d1d5db;
+            --theme-text-muted: #6b7280;
+            --theme-accent: #22d3ee;
+        }
+
+        /* Theme: Cyberpunk */
+        [data-theme="cyberpunk"] {
+            --theme-bg: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            --theme-card-bg: rgba(48, 43, 99, 0.4);
+            --theme-card-border: rgba(255, 0, 128, 0.3);
+            --theme-text: #ff00ff;
+            --theme-text-muted: #a855f7;
+            --theme-accent: #ff0080;
+        }
+
+        /* Theme: Ocean */
+        [data-theme="ocean"] {
+            --theme-bg: linear-gradient(180deg, #0a1628 0%, #0d2137 50%, #0f172a 100%);
+            --theme-card-bg: rgba(14, 165, 233, 0.08);
+            --theme-card-border: rgba(14, 165, 233, 0.25);
+            --theme-text: #7dd3fc;
+            --theme-text-muted: #0ea5e9;
+            --theme-accent: #38bdf8;
+        }
+
+        /* Theme: Forest */
+        [data-theme="forest"] {
+            --theme-bg: linear-gradient(180deg, #052e16 0%, #14532d 50%, #0c1f0f 100%);
+            --theme-card-bg: rgba(34, 197, 94, 0.1);
+            --theme-card-border: rgba(34, 197, 94, 0.3);
+            --theme-text: #86efac;
+            --theme-text-muted: #22c55e;
+            --theme-accent: #4ade80;
+        }
+
+        /* Theme: Sunset */
+        [data-theme="sunset"] {
+            --theme-bg: linear-gradient(135deg, #1a0a0a 0%, #2d1810 50%, #1f0f05 100%);
+            --theme-card-bg: rgba(251, 146, 60, 0.1);
+            --theme-card-border: rgba(251, 146, 60, 0.3);
+            --theme-text: #fed7aa;
+            --theme-text-muted: #fb923c;
+            --theme-accent: #f97316;
+        }
+
+        /* Theme: Aurora */
+        [data-theme="aurora"] {
+            --theme-bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 30%, #134e4a 70%, #1e3a5f 100%);
+            --theme-card-bg: rgba(139, 92, 246, 0.1);
+            --theme-card-border: rgba(139, 92, 246, 0.3);
+            --theme-text: #c4b5fd;
+            --theme-text-muted: #a78bfa;
+            --theme-accent: #8b5cf6;
+        }
+
+        /* Theme: Warm */
+        [data-theme="warm"] {
+            --theme-bg: #1c1917;
+            --theme-card-bg: rgba(120, 113, 108, 0.15);
+            --theme-card-border: rgba(168, 162, 158, 0.3);
+            --theme-text: #e7e5e4;
+            --theme-text-muted: #a8a29e;
+            --theme-accent: #fbbf24;
+        }
+
+        :root {
+            --bg-black: var(--theme-bg);
+            --panel: var(--theme-card-bg);
+            --panel-border: var(--theme-card-border);
             --node-border: rgba(255, 255, 255, 0.06);
-            --node-accent: #6ee7ff;
+            --node-accent: var(--theme-accent);
             --node-glow: rgba(110, 231, 255, 0.35);
             --grid: rgba(255, 255, 255, 0.04);
             --grid-strong: rgba(255, 255, 255, 0.08);
         }
 
         body {
-            background: var(--bg-black);
+            background: var(--theme-bg);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            color: #d1d5db;
+            color: var(--theme-text);
         }
 
         .grid-bg {
@@ -54,7 +134,7 @@
 
         #flow-panel .panel,
         #account-panel .panel {
-            background: #000;
+            background: var(--bg-black);
         }
 
         #flow-panel .grid-bg,
@@ -69,9 +149,10 @@
 
         .node {
             border: 1px solid var(--node-border);
-            background: rgba(20, 20, 20, 0.9);
+            background: var(--theme-card-bg, rgba(20, 20, 20, 0.9));
             box-shadow: 0 0 0 rgba(0, 0, 0, 0);
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+            color: var(--theme-text);
         }
 
         .node:hover {
@@ -81,9 +162,9 @@
         }
 
         .node-palette {
-            background: linear-gradient(145deg, rgba(110, 231, 255, 0.12), rgba(10, 10, 10, 0.9));
-            border-color: rgba(110, 231, 255, 0.2);
-            box-shadow: 0 0 12px rgba(110, 231, 255, 0.08);
+            background: linear-gradient(145deg, color-mix(in srgb, var(--theme-accent) 12%, transparent), var(--theme-card-bg, rgba(10, 10, 10, 0.9)));
+            border-color: color-mix(in srgb, var(--theme-accent) 20%, transparent);
+            box-shadow: 0 0 12px color-mix(in srgb, var(--theme-accent) 8%, transparent);
             position: relative;
             overflow: hidden;
         }
@@ -92,7 +173,7 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: linear-gradient(120deg, rgba(110, 231, 255, 0.12), transparent 50%);
+            background: linear-gradient(120deg, color-mix(in srgb, var(--theme-accent) 12%, transparent), transparent 50%);
             opacity: 0.3;
             pointer-events: none;
         }
@@ -104,13 +185,13 @@
             left: 0;
             right: 0;
             height: 1px;
-            background: linear-gradient(90deg, rgba(110, 231, 255, 0.6), rgba(110, 231, 255, 0));
+            background: linear-gradient(90deg, color-mix(in srgb, var(--theme-accent) 60%, transparent), transparent);
             opacity: 0.5;
         }
 
         .panel-scroll {
             scrollbar-width: thin;
-            scrollbar-color: rgba(110, 231, 255, 0.3) transparent;
+            scrollbar-color: color-mix(in srgb, var(--theme-accent) 30%, transparent) transparent;
             padding-right: 6px;
         }
 
@@ -123,30 +204,30 @@
         }
 
         .panel-scroll::-webkit-scrollbar-thumb {
-            background: rgba(110, 231, 255, 0.3);
+            background: color-mix(in srgb, var(--theme-accent) 30%, transparent);
             border-radius: 3px;
         }
 
         .panel-scroll::-webkit-scrollbar-thumb:hover {
-            background: rgba(110, 231, 255, 0.5);
+            background: color-mix(in srgb, var(--theme-accent) 50%, transparent);
         }
 
         .drop-slot {
             width: 100%;
             min-height: 84px;
-            border: 1px dashed rgba(255, 255, 255, 0.1);
+            border: 1px dashed var(--theme-text-muted);
             border-radius: 12px;
             padding: 16px 16px;
             text-align: center;
-            color: rgba(255, 255, 255, 0.3);
+            color: var(--theme-text-muted);
             transition: border-color 0.2s ease, color 0.2s ease;
-            background: linear-gradient(135deg, rgba(110, 231, 255, 0.05), rgba(255, 255, 255, 0.02));
+            background: linear-gradient(135deg, color-mix(in srgb, var(--theme-accent) 5%, transparent), color-mix(in srgb, var(--theme-text) 2%, transparent));
             position: relative;
         }
 
         .drop-slot.active {
-            border-color: var(--node-accent);
-            color: var(--node-accent);
+            border-color: var(--theme-accent);
+            color: var(--theme-accent);
         }
 
         .drop-slot::after {
@@ -155,12 +236,13 @@
             top: 8px;
             right: 10px;
             font-size: 14px;
-            color: rgba(255, 255, 255, 0.2);
+            color: var(--theme-text-muted);
         }
 
         .account-pill {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: color-mix(in srgb, var(--theme-text) 4%, transparent);
+            border: 1px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
+            color: var(--theme-text-muted);
         }
 
         .node {
@@ -185,9 +267,10 @@
         .action-btn {
             transform-style: preserve-3d;
             transition: box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
-            background: rgba(17, 17, 17, 0.9);
+            background: var(--theme-card-bg, rgba(17, 17, 17, 0.9));
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(59, 42, 84, 0.3);
+            border: 1px solid var(--theme-card-border);
+            color: var(--theme-text);
         }
 
         #back-btn:hover {
@@ -226,9 +309,9 @@
 
         .flow-node {
             position: relative;
-            border-color: rgba(110, 231, 255, 0.3);
-            background: linear-gradient(145deg, rgba(110, 231, 255, 0.14), rgba(10, 10, 10, 0.9));
-            box-shadow: 0 0 24px rgba(110, 231, 255, 0.12);
+            border-color: color-mix(in srgb, var(--theme-accent) 30%, transparent);
+            background: linear-gradient(145deg, color-mix(in srgb, var(--theme-accent) 14%, transparent), var(--theme-card-bg, rgba(10, 10, 10, 0.9)));
+            box-shadow: 0 0 24px color-mix(in srgb, var(--theme-accent) 12%, transparent);
             overflow: hidden;
             z-index: 2;
         }
@@ -237,7 +320,7 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: linear-gradient(120deg, rgba(110, 231, 255, 0.18), transparent 50%);
+            background: linear-gradient(120deg, color-mix(in srgb, var(--theme-accent) 18%, transparent), transparent 50%);
             opacity: 0.4;
             pointer-events: none;
         }
@@ -249,13 +332,13 @@
             left: 0;
             right: 0;
             height: 2px;
-            background: linear-gradient(90deg, rgba(110, 231, 255, 0.8), rgba(110, 231, 255, 0));
+            background: linear-gradient(90deg, color-mix(in srgb, var(--theme-accent) 80%, transparent), transparent);
             opacity: 0.6;
         }
 
         .flow-node.drop-target {
-            border-color: rgba(110, 231, 255, 0.85);
-            box-shadow: 0 0 26px rgba(110, 231, 255, 0.35);
+            border-color: color-mix(in srgb, var(--theme-accent) 85%, transparent);
+            box-shadow: 0 0 26px color-mix(in srgb, var(--theme-accent) 35%, transparent);
         }
 
         .flow-badge {
@@ -265,8 +348,8 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: rgba(110, 231, 255, 0.2);
-            color: #b9f3ff;
+            background: color-mix(in srgb, var(--theme-accent) 20%, transparent);
+            color: var(--theme-accent);
             font-size: 11px;
             font-weight: 700;
         }
@@ -277,9 +360,9 @@
             width: 10px;
             height: 10px;
             border-radius: 999px;
-            background: rgba(10, 10, 10, 0.9);
-            border: 1px solid rgba(110, 231, 255, 0.6);
-            box-shadow: 0 0 10px rgba(110, 231, 255, 0.4);
+            background: var(--theme-card-bg, rgba(10, 10, 10, 0.9));
+            border: 1px solid color-mix(in srgb, var(--theme-accent) 60%, transparent);
+            box-shadow: 0 0 10px color-mix(in srgb, var(--theme-accent) 40%, transparent);
             transform: translateX(-50%);
             pointer-events: none;
         }
@@ -319,8 +402,7 @@
         /* Iframe embed mode styles - match parent page background */
         body.iframe-mode {
             padding: 0 !important;
-            background: #000000 !important;
-            --bg-black: #000000;
+            background: var(--bg-black) !important;
             overflow: hidden !important;
         }
 
@@ -384,18 +466,18 @@
 
         .select-field {
             appearance: none;
-            background-color: rgba(10, 10, 10, 0.8);
-            border: 1px solid rgba(110, 231, 255, 0.22);
-            color: #e5e7eb;
+            background-color: var(--theme-card-bg, rgba(10, 10, 10, 0.8));
+            border: 1px solid color-mix(in srgb, var(--theme-accent) 22%, transparent);
+            color: var(--theme-text);
             border-radius: 12px;
             padding: 12px 36px 12px 12px;
             font-size: 12px;
             line-height: 1.2;
-            box-shadow: inset 0 0 0 1px rgba(110, 231, 255, 0.08);
+            box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent) 8%, transparent);
             background-image:
-                linear-gradient(45deg, transparent 50%, rgba(110, 231, 255, 0.9) 50%),
-                linear-gradient(135deg, rgba(110, 231, 255, 0.9) 50%, transparent 50%),
-                linear-gradient(90deg, rgba(10, 10, 10, 0.9), rgba(10, 10, 10, 0.9));
+                linear-gradient(45deg, transparent 50%, var(--theme-accent) 50%),
+                linear-gradient(135deg, var(--theme-accent) 50%, transparent 50%),
+                linear-gradient(90deg, var(--theme-card-bg, rgba(10, 10, 10, 0.9)), var(--theme-card-bg, rgba(10, 10, 10, 0.9)));
             background-position:
                 calc(100% - 18px) 50%,
                 calc(100% - 12px) 50%,
@@ -406,8 +488,8 @@
 
         .select-field:focus {
             outline: none;
-            border-color: rgba(110, 231, 255, 0.6);
-            box-shadow: 0 0 0 2px rgba(110, 231, 255, 0.18);
+            border-color: color-mix(in srgb, var(--theme-accent) 60%, transparent);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-accent) 18%, transparent);
         }
     </style>
 </head>
@@ -422,35 +504,34 @@
     <div class="max-w-7xl mx-auto space-y-6 main-container">
         <header class="flex items-center justify-between">
             <div>
-                <h1 class="text-3xl font-bold text-gray-200">Routing</h1>
-                <p class="text-sm text-gray-500 mt-1 font-bold">Build model chains with fallback on 429</p>
+                <h1 id="routing-title" class="text-3xl font-bold" style="color: var(--theme-text);">Routing</h1>
+                <p id="routing-subtitle" class="text-sm mt-1 font-bold" style="color: var(--theme-text-muted);">Build model chains with fallback on 429</p>
             </div>
             <div class="flex items-center gap-4">
                 <div class="flex items-center gap-2 text-xs">
                     <button id="tab-flow" onclick="setRoutingTab('flow')"
                         class="action-btn px-3 py-2 rounded-lg font-bold text-gray-300">
-                        Flow Routing
+                        <span data-rt="flowRouting">Flow Routing</span>
                     </button>
                     <button id="tab-account" onclick="setRoutingTab('account')"
                         class="action-btn px-3 py-2 rounded-lg font-bold text-gray-400">
-                        Account Routing
+                        <span data-rt="accountRouting">Account Routing</span>
                     </button>
                 </div>
                 <div class="action-wrap inline-block">
                     <button onclick="window.location.href='/quota'" id="back-btn"
                         class="action-btn px-4 py-2 rounded-lg font-bold text-gray-300 text-sm">
-                        Back to Quota
+                        <span data-rt="backToQuota">Back to Quota</span>
                     </button>
                 </div>
             </div>
         </header>
 
         <div id="flow-panel" class="grid gap-6 routing-panels" style="grid-template-columns: 1fr 1.5fr 1fr;">
-            <!-- Accounts Panel -->
             <aside class="panel rounded-2xl p-4 flex flex-col min-h-0">
                 <div class="mb-3 flex-shrink-0">
-                    <h2 class="text-sm uppercase tracking-[0.2em] text-gray-500">Accounts</h2>
-                    <p class="text-xs text-gray-600 mt-1">Drag a model block into the flow.</p>
+                    <h2 class="text-sm uppercase tracking-[0.2em]" style="color: var(--theme-text-muted);" data-rt="accounts">Accounts</h2>
+                    <p class="text-xs mt-1" style="color: var(--theme-text-muted);" data-rt="accountsHint">Drag a model block into the flow.</p>
                 </div>
                 <div id="account-list" class="space-y-4 flex-1 min-h-0 overflow-y-auto panel-scroll"></div>
             </aside>
@@ -461,28 +542,29 @@
                     <!-- Flow Header -->
                     <div class="flex items-start justify-between gap-3 mb-4 flex-shrink-0">
                         <div>
-                            <h2 class="text-sm uppercase tracking-[0.2em] text-gray-500">Flow</h2>
-                            <p class="text-xs text-gray-600 mt-1">Match by model name in requests.</p>
+                            <h2 class="text-sm uppercase tracking-[0.2em]" style="color: var(--theme-text-muted);" data-rt="flow">Flow</h2>
+                            <p class="text-xs mt-1" style="color: var(--theme-text-muted);" data-rt="flowHint">Match by model name in requests.</p>
                         </div>
                         <div class="flex items-center gap-2">
                             <input id="flow-name" placeholder="Model ID"
-                                class="bg-transparent border border-gray-700 rounded-lg px-2 py-2 text-xs text-gray-200 focus:outline-none focus:border-cyan-300 w-24 text-center"
+                                class="bg-transparent border rounded-lg px-2 py-2 text-xs focus:outline-none w-24 text-center"
+                                style="border-color: var(--theme-card-border); color: var(--theme-text);"
                                 autocomplete="off" />
                             <div class="action-wrap inline-block">
                                 <button onclick="newFlow()" id="new-btn"
-                                    class="action-btn px-3 py-2 rounded-lg font-bold text-gray-300 text-xs">
+                                    class="action-btn px-3 py-2 rounded-lg font-bold text-gray-300 text-xs" data-rt="new">
                                     New
                                 </button>
                             </div>
                             <div class="action-wrap inline-block">
                                 <button onclick="saveRouting()" id="save-btn"
-                                    class="action-btn px-3 py-2 rounded-lg font-bold text-gray-300 text-xs">
+                                    class="action-btn px-3 py-2 rounded-lg font-bold text-gray-300 text-xs" data-rt="save">
                                     Save
                                 </button>
                             </div>
                         </div>
                     </div>
-                    <div id="save-status" class="text-xs text-gray-500 text-right mb-2 flex-shrink-0"></div>
+                <div id="save-status" class="text-xs text-right mb-2 flex-shrink-0" style="color: var(--theme-text-muted);"></div>
                     <!-- Scrollable Flow Canvas -->
                     <div class="flow-scroll flex-1 min-h-0 overflow-y-auto panel-scroll">
                         <div id="flow-canvas" class="flow-canvas flex flex-col gap-4 min-h-[240px]"></div>
@@ -493,8 +575,8 @@
             <!-- Saved Panel -->
             <aside class="panel rounded-2xl p-4 flex flex-col min-h-0">
                 <div class="mb-3 flex-shrink-0">
-                    <h2 class="text-sm uppercase tracking-[0.2em] text-gray-500">Saved</h2>
-                    <p class="text-xs text-gray-600 mt-1">Edit, rename, or delete saved flows.</p>
+                    <h2 class="text-sm uppercase tracking-[0.2em]" style="color: var(--theme-text-muted);" data-rt="saved">Saved</h2>
+                    <p class="text-xs mt-1" style="color: var(--theme-text-muted);" data-rt="savedHint">Edit, rename, or delete saved flows.</p>
                 </div>
                 <div id="saved-list" class="space-y-3 flex-1 min-h-0 overflow-y-auto panel-scroll"></div>
             </aside>
@@ -503,8 +585,8 @@
         <div id="account-panel" class="grid gap-6 hidden routing-panels" style="grid-template-columns: 1fr 2fr;">
             <aside class="panel rounded-2xl p-4 flex flex-col min-h-0">
                 <div class="mb-3 flex-shrink-0">
-                    <h2 class="text-sm uppercase tracking-[0.2em] text-gray-500">Models</h2>
-                    <p class="text-xs text-gray-600 mt-1">Official model IDs only.</p>
+                    <h2 class="text-sm uppercase tracking-[0.2em]" style="color: var(--theme-text-muted);" data-rt="models">Models</h2>
+                    <p class="text-xs mt-1" style="color: var(--theme-text-muted);" data-rt="modelsHint">Official model IDs only.</p>
                 </div>
                 <div id="account-model-list" class="space-y-2 flex-1 min-h-0 overflow-y-auto panel-scroll"></div>
             </aside>
@@ -512,38 +594,38 @@
             <section class="panel rounded-2xl p-6 flex flex-col min-h-0">
                 <div class="flex items-start justify-between gap-3 mb-4 flex-shrink-0">
                     <div>
-                        <h2 class="text-sm uppercase tracking-[0.2em] text-gray-500">Account Chain</h2>
-                        <p class="text-xs text-gray-600 mt-1">Ordered provider/account fallback.</p>
+                        <h2 class="text-sm uppercase tracking-[0.2em]" style="color: var(--theme-text-muted);" data-rt="accountChain">Account Chain</h2>
+                        <p class="text-xs mt-1" style="color: var(--theme-text-muted);" data-rt="accountChainHint">Ordered provider/account fallback.</p>
                     </div>
-                    <div class="flex items-center gap-2 text-xs text-gray-400">
+                    <div class="flex items-center gap-2 text-xs" style="color: var(--theme-text-muted);">
                         <label class="flex items-center gap-2 cursor-pointer">
                             <input id="smart-switch" type="checkbox" class="toggle-switch">
-                            <span>Smart Switch</span>
+                            <span data-rt="smartSwitch">Smart Switch</span>
                         </label>
                         <button id="account-save-btn" onclick="saveAccountRouting()"
-                            class="action-btn px-3 py-2 rounded-lg font-bold text-gray-300 text-xs">
+                            class="action-btn px-3 py-2 rounded-lg font-bold text-xs" data-rt="save">
                             Save
                         </button>
                     </div>
                 </div>
 
-                <div id="account-route-title" class="text-sm text-gray-400 mb-3 flex-shrink-0">Select a model</div>
+                <div id="account-route-title" class="text-sm mb-3 flex-shrink-0" style="color: var(--theme-text-muted);" data-rt="selectModel">Select a model</div>
 
                 <div class="grid gap-3 mb-4 flex-shrink-0" style="grid-template-columns: 1fr 1fr auto;">
                     <select id="account-provider-select" class="select-field w-full">
-                        <option value="">Provider</option>
+                        <option value="" data-rt="provider">Provider</option>
                     </select>
                     <select id="account-account-select" class="select-field w-full">
-                        <option value="">Account</option>
+                        <option value="" data-rt="account">Account</option>
                     </select>
                     <button onclick="addAccountRouteEntry()"
-                        class="action-btn px-3 py-2 rounded-lg font-bold text-gray-300 text-xs">
+                        class="action-btn px-3 py-2 rounded-lg font-bold text-gray-300 text-xs" data-rt="add">
                         Add
                     </button>
                 </div>
 
                 <div id="account-route-list" class="space-y-3 flex-1 min-h-0 overflow-y-auto panel-scroll"></div>
-                <div id="account-route-hint" class="text-xs text-gray-600 mt-3 flex-shrink-0">
+                <div id="account-route-hint" class="text-xs mt-3 flex-shrink-0" style="color: var(--theme-text-muted);" data-rt="smartSwitchOn">
                     Smart Switch on: auto entries expand by account order.
                 </div>
             </section>
@@ -551,16 +633,63 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8964';
+        const API_BASE = `${window.location.protocol}//${window.location.hostname}:8964`;
+
+        // 兼容 HTTP 环境的 UUID 生成函数（crypto.randomUUID 只在 HTTPS 下可用）
+        function generateUUID() {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return generateUUID();
+            }
+            // Fallback for HTTP context
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
         const STORAGE_KEYS = {
             activeFlow: 'anti-api-active-flow',
             privacyMode: 'anti-api-privacy-mode',
         };
         const PROVIDER_ORDER = ['antigravity', 'codex', 'copilot'];
         const MODEL_GROUPS = {
-            claudeGpt: ['claude-sonnet-4-5', 'claude-sonnet-4-5-thinking', 'claude-opus-4-5-thinking', 'gpt-oss-120b'],
-            gpro: ['gemini-3-pro-low', 'gemini-3-pro-high'],
-            gflash: ['gemini-3-flash'],
+            // Claude 配额组：所有 Claude 模型 + GPT-OSS
+            claudeGpt: [
+                'claude-opus-4-5-thinking',
+                'claude-sonnet-4-5', 'claude-sonnet-4-5-thinking',
+                'claude-haiku-4-5', 'claude-haiku-4-5-thinking',
+                'claude-opus-4', 'claude-opus-4-thinking',
+                'claude-sonnet-4', 'claude-sonnet-4-thinking',
+                'gpt-oss-120b'
+            ],
+            // Gemini Pro 配额组：所有 Gemini 3 Pro 变体
+            gpro: [
+                'gemini-3-pro', 'gemini-3-pro-low', 'gemini-3-pro-high',
+                'gemini-3-pro-latest', 'gemini-3-pro-high-latest'
+            ],
+            // Gemini Flash 配额组：所有 Gemini 3 Flash 变体
+            gflash: [
+                'gemini-3-flash', 'gemini-3-flash-latest',
+                'gemini-3-flash-lite', 'gemini-3-flash-lite-latest'
+            ],
+            // Gemini Image 配额组：所有画图模型变体
+            gimage: [
+                'gemini-3-pro-image',
+                'gemini-3-pro-image-1x1', 'gemini-3-pro-image-1-1',
+                'gemini-3-pro-image-16x9', 'gemini-3-pro-image-16-9',
+                'gemini-3-pro-image-9x16', 'gemini-3-pro-image-9-16',
+                'gemini-3-pro-image-4x3', 'gemini-3-pro-image-4-3',
+                'gemini-3-pro-image-3x4', 'gemini-3-pro-image-3-4',
+                'gemini-3-pro-image-21x9', 'gemini-3-pro-image-21-9',
+                'gemini-3-pro-image-2k', 'gemini-3-pro-image-4k',
+                'gemini-3-pro-image-2k-1x1', 'gemini-3-pro-image-4k-1x1',
+                'gemini-3-pro-image-2k-16x9', 'gemini-3-pro-image-4k-16x9',
+                'gemini-3-pro-image-2k-9x16', 'gemini-3-pro-image-4k-9x16',
+                'gemini-3-pro-image-2k-4x3', 'gemini-3-pro-image-4k-4x3',
+                'gemini-3-pro-image-2k-3x4', 'gemini-3-pro-image-4k-3x4',
+                'gemini-3-pro-image-2k-21x9', 'gemini-3-pro-image-4k-21x9'
+            ]
         };
 
         const dom = {
@@ -614,9 +743,38 @@
         let activeFlowId = null;
         let quotaData = null;  // Store quota data for model rendering
         let accountRouting = { smartSwitch: false, routes: [] };
+        let disabledAccounts = [];  // 🆕 禁用的账户列表
         let officialModels = [];
         let selectedAccountModelId = null;
         let activeRoutingTab = 'flow';
+
+        // 🆕 检查账户是否被禁用
+        function isAccountDisabled(provider, accountId) {
+            const key = `${provider}:${accountId}`;
+            return disabledAccounts.includes(key);
+        }
+
+        // 🆕 切换账户禁用状态
+        async function toggleAccountDisabled(provider, accountId, event) {
+            if (event) event.stopPropagation();
+            try {
+                const res = await apiPost('/routing/toggle-account', { provider, accountId });
+                if (res.success) {
+                    const key = `${provider}:${accountId}`;
+                    if (res.disabled) {
+                        if (!disabledAccounts.includes(key)) {
+                            disabledAccounts.push(key);
+                        }
+                    } else {
+                        const idx = disabledAccounts.indexOf(key);
+                        if (idx >= 0) disabledAccounts.splice(idx, 1);
+                    }
+                    renderAccounts();
+                }
+            } catch (error) {
+                console.error('Failed to toggle account:', error);
+            }
+        }
 
         // Privacy masking (synced from settings via localStorage cache)
         function getPrivacyMode() {
@@ -707,7 +865,7 @@
         function ensureAccountRoute(modelId) {
             let route = getAccountRoute(modelId);
             if (!route) {
-                route = { id: crypto.randomUUID(), modelId, entries: [] };
+                route = { id: generateUUID(), modelId, entries: [] };
                 accountRouting.routes.push(route);
             }
             return route;
@@ -874,7 +1032,7 @@
                 ? 'Auto (Smart Switch)'
                 : (accounts[provider] || []).find(acc => acc.id === accountId)?.displayName;
             route.entries.push({
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 provider,
                 accountId,
                 accountLabel: displayName,
@@ -916,6 +1074,7 @@
             flows = Array.isArray(data.config?.flows) ? data.config.flows : [];
             quotaData = data.quota || null;
             accountRouting = data.config?.accountRouting || { smartSwitch: false, routes: [] };
+            disabledAccounts = data.config?.disabledAccounts || [];  // 🆕 加载禁用账户列表
             officialModels = collectOfficialModels(models);
 
             const savedFlowId = localStorage.getItem(STORAGE_KEYS.activeFlow);
@@ -1062,6 +1221,7 @@
             if (MODEL_GROUPS.claudeGpt.includes(modelId)) barKey = 'claude_gpt';
             else if (MODEL_GROUPS.gpro.includes(modelId)) barKey = 'gpro';
             else if (MODEL_GROUPS.gflash.includes(modelId)) barKey = 'gflash';
+            else if (MODEL_GROUPS.gimage.includes(modelId)) barKey = 'gimage';
 
             if (!barKey) return null;
 
@@ -1084,6 +1244,9 @@
                     const card = document.createElement('div');
                     card.className = 'space-y-2';
 
+                    // 🆕 检查账户是否被禁用
+                    const accountDisabled = isAccountDisabled(provider, account.id);
+
                     // Get quota percentage for this account (quotaPercent = REMAINING percentage, not used)
                     const remaining = getAccountQuota(provider, account.id);
 
@@ -1096,34 +1259,46 @@
 
                     const header = document.createElement('div');
                     header.className = 'flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity';
+                    // 🆕 禁用的账户显示特殊样式
+                    const disabledBadge = accountDisabled ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 ml-2">DISABLED</span>' : '';
+                    const nameStyle = accountDisabled ? 'opacity-50 line-through' : '';
                     header.innerHTML = `
                         <div class="flex items-center gap-2">
                             <span class="text-[10px] text-gray-500 transition-transform ${isCollapsed ? '' : 'rotate-90'}" data-toggle-icon>▶</span>
-                            <span class="text-sm font-semibold text-gray-200">${maskedDisplayName}</span>
+                            <span class="text-sm font-semibold text-gray-200 ${nameStyle}">${maskedDisplayName}</span>
+                            ${disabledBadge}
                         </div>
                         <div class="flex items-center gap-2">
+                            <button onclick="toggleAccountDisabled('${provider}', '${account.id}', event)"
+                                class="text-[9px] px-2 py-0.5 rounded ${accountDisabled ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}"
+                                title="${accountDisabled ? 'Enable this account' : 'Disable this account'}">
+                                ${accountDisabled ? 'Enable' : 'Disable'}
+                            </button>
                             <span class="account-pill text-[10px] px-2 py-0.5 rounded-full">${provider}</span>
                         </div>
                     `;
                     card.appendChild(header);
 
                     const modelGrid = document.createElement('div');
-                    modelGrid.className = 'grid grid-cols-1 gap-2 overflow-hidden transition-all duration-200';
-                    modelGrid.style.maxHeight = isCollapsed ? '0px' : '1000px';
+                    modelGrid.className = 'grid gap-1.5 overflow-hidden transition-all duration-200';
+                    modelGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(90px, 1fr))';
+                    modelGrid.style.maxHeight = isCollapsed ? '0px' : '2000px';
                     modelGrid.style.opacity = isCollapsed ? '0' : '1';
+                    modelGrid.style.paddingTop = isCollapsed ? '0' : '8px';
 
                     // Toggle collapse on header click
                     header.addEventListener('click', () => {
                         const nowCollapsed = modelGrid.style.maxHeight !== '0px';
-                        modelGrid.style.maxHeight = nowCollapsed ? '0px' : '1000px';
+                        modelGrid.style.maxHeight = nowCollapsed ? '0px' : '2000px';
                         modelGrid.style.opacity = nowCollapsed ? '0' : '1';
+                        modelGrid.style.paddingTop = nowCollapsed ? '0' : '8px';
                         header.querySelector('[data-toggle-icon]').classList.toggle('rotate-90', !nowCollapsed);
                         localStorage.setItem(collapseKey, nowCollapsed ? 'true' : 'false');
                     });
 
                     providerModels.forEach(model => {
                         const node = document.createElement('div');
-                        node.className = 'node flow-node rounded-xl px-3 py-2 text-xs cursor-grab relative overflow-hidden';
+                        node.className = 'node flow-node rounded-lg px-1.5 py-1.5 text-[10px] cursor-grab relative overflow-hidden text-center';
                         node.draggable = true;
                         node.dataset.provider = provider;
                         node.dataset.accountId = account.id;
@@ -1137,20 +1312,41 @@
 
                         // Combine flow gradient with battery fill effect
                         if (modelQuota !== null) {
-                            node.style.backgroundImage = `linear-gradient(90deg, 
-                                rgba(110, 231, 255, 0.22) 0%, 
-                                rgba(110, 231, 255, 0.16) ${modelQuota}%, 
+                            node.style.backgroundImage = `linear-gradient(90deg,
+                                rgba(110, 231, 255, 0.22) 0%,
+                                rgba(110, 231, 255, 0.16) ${modelQuota}%,
                                 rgba(10, 10, 10, 0.95) ${modelQuota}%), ${baseGradient}`;
                         } else {
                             node.style.backgroundImage = baseGradient;
                         }
 
+                        // Shorten model label for compact display
+                        const shortLabel = model.label
+                            .replace('Gemini 3 Pro Image ', 'Img ')
+                            .replace('Gemini 3 Pro ', 'G3P ')
+                            .replace('Gemini 3 Flash', 'G3Flash')
+                            .replace('Gemini 2.5 Flash ', 'G2.5F ')
+                            .replace('Gemini 2.5 Pro', 'G2.5Pro')
+                            .replace('Gemini 2.0 Flash ', 'G2F ')
+                            .replace('Claude Opus 4.5 ', 'Op4.5 ')
+                            .replace('Claude Sonnet 4.5 ', 'So4.5 ')
+                            .replace('Claude Haiku 4.5 ', 'Ha4.5 ')
+                            .replace('Claude Opus 4 ', 'Op4 ')
+                            .replace('Claude Sonnet 4 ', 'So4 ')
+                            .replace('GPT-OSS 120B (Medium)', 'OSS-120B')
+                            .replace('(Thinking)', 'T')
+                            .replace('(Experimental)', 'Exp')
+                            .replace('(High)', 'H')
+                            .replace('(Low)', 'L')
+                            .replace(' Lite', 'L');
+
                         node.innerHTML = `
-                            <div class="flex items-center justify-between relative z-10">
-                                <span>${model.label}</span>
-                                ${modelQuota !== null ? `<span class="text-[10px] text-cyan-400/80">${modelQuota}%</span>` : ''}
+                            <div class="relative z-10 leading-tight">
+                                <div class="truncate">${shortLabel}</div>
+                                ${modelQuota !== null ? `<div class="text-cyan-400/70 text-[9px]">${modelQuota}%</div>` : ''}
                             </div>
                         `;
+                        node.title = model.label; // Full name on hover
                         node.addEventListener('dragstart', onDragStart);
                         modelGrid.appendChild(node);
                     });
@@ -1218,7 +1414,7 @@
 
         function createEntryFromPayload(payload) {
             return {
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 provider: payload.provider,
                 accountId: payload.accountId,
                 modelId: payload.modelId,
@@ -1322,7 +1518,7 @@
                 return;
             }
 
-            const flowId = activeFlowId || crypto.randomUUID();
+            const flowId = activeFlowId || generateUUID();
             const flow = { id: flowId, name: flowName, entries: flowEntries };
             const index = flows.findIndex(existing => existing.id === flowId);
 
@@ -1477,6 +1673,162 @@
                 renderAccounts();
                 renderFlow();
                 renderAccountRouting();
+            }
+            // 🆕 监听主题变化
+            if (e.key === 'anti-api-theme') {
+                applyTheme(e.newValue || 'midnight');
+            }
+        });
+
+        // 🆕 监听主题变化（从主页面同步）
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme || 'midnight');
+            document.body.style.background = 'var(--theme-bg)';
+        }
+
+        // 初始化时从 localStorage 读取主题
+        const savedTheme = localStorage.getItem('anti-api-theme') || 'midnight';
+        applyTheme(savedTheme);
+
+        // 监听来自父页面的主题消息（iframe 模式）
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'theme-change') {
+                applyTheme(e.data.theme);
+            }
+            // 🆕 监听语言变化
+            if (e.data && e.data.type === 'language-change') {
+                applyLanguage(e.data.lang);
+            }
+        });
+
+        // 🆕 多语言支持
+        const routingI18n = {
+            en: {
+                title: 'Routing',
+                subtitle: 'Build model chains with fallback on 429',
+                flowRouting: 'Flow Routing',
+                accountRouting: 'Account Routing',
+                accounts: 'ACCOUNTS',
+                accountsHint: 'Drag a model block into the flow.',
+                flow: 'FLOW',
+                flowHint: 'Match by model name in requests.',
+                saved: 'SAVED',
+                savedHint: 'Edit, rename, or delete saved flows.',
+                new: 'New',
+                save: 'Save',
+                models: 'MODELS',
+                modelsHint: 'Official model IDs only.',
+                accountChain: 'ACCOUNT CHAIN',
+                accountChainHint: 'Ordered provider/account fallback.',
+                smartSwitch: 'Smart Switch',
+                selectModel: 'Select a model',
+                noEntries: 'No entries yet.',
+                noFlows: 'No saved flows yet.',
+                noAccounts: 'No accounts yet. Add accounts from /quota.',
+                noModels: 'No official models available.',
+                hops: 'hops',
+                editing: 'Editing',
+                clickToEdit: 'Click to edit',
+                edit: 'Edit',
+                delete: 'Delete',
+                remove: 'Remove',
+                up: 'Up',
+                down: 'Down',
+                add: 'Add',
+                provider: 'Provider',
+                account: 'Account',
+                fallbackOn429: 'fallback on 429',
+                dropHere: 'Drop here',
+                disable: 'Disable',
+                enable: 'Enable',
+                disabled: 'DISABLED',
+                smartSwitchOn: 'Smart Switch on: auto entries expand by account order.',
+                smartSwitchOff: 'Smart Switch off: only explicit account order is used.',
+                backToQuota: 'Back to Quota',
+            },
+            zh: {
+                title: '路由',
+                subtitle: '构建 429 自动切换的模型链',
+                flowRouting: 'Flow 路由',
+                accountRouting: '账户路由',
+                accounts: '账户',
+                accountsHint: '拖拽模型块到流程中',
+                flow: '流程',
+                flowHint: '按请求中的模型名匹配',
+                saved: '已保存',
+                savedHint: '编辑、重命名或删除已保存的流程',
+                new: '新建',
+                save: '保存',
+                models: '模型',
+                modelsHint: '仅官方模型 ID',
+                accountChain: '账户链',
+                accountChainHint: '按顺序的供应商/账户回退',
+                smartSwitch: '智能切换',
+                selectModel: '选择一个模型',
+                noEntries: '暂无条目',
+                noFlows: '暂无已保存的流程',
+                noAccounts: '暂无账户，请从 /quota 添加',
+                noModels: '暂无可用的官方模型',
+                hops: '跳',
+                editing: '编辑中',
+                clickToEdit: '点击编辑',
+                edit: '编辑',
+                delete: '删除',
+                remove: '移除',
+                up: '上移',
+                down: '下移',
+                add: '添加',
+                provider: '供应商',
+                account: '账户',
+                fallbackOn429: '429 时回退',
+                dropHere: '拖放到这里',
+                disable: '禁用',
+                enable: '启用',
+                disabled: '已禁用',
+                smartSwitchOn: '智能切换开启：自动条目按账户顺序展开',
+                smartSwitchOff: '智能切换关闭：仅使用显式账户顺序',
+                backToQuota: '返回配额',
+            }
+        };
+
+        let routingLang = localStorage.getItem('anti-api-language') || 'en';
+
+        function rt(key) {
+            return routingI18n[routingLang]?.[key] || routingI18n.en[key] || key;
+        }
+
+        function applyLanguage(lang) {
+            routingLang = lang || 'en';
+
+            // 更新静态 HTML 元素
+            const titleEl = document.getElementById('routing-title');
+            const subtitleEl = document.getElementById('routing-subtitle');
+            if (titleEl) titleEl.textContent = rt('title');
+            if (subtitleEl) subtitleEl.textContent = rt('subtitle');
+
+            // 更新所有 data-rt 属性的元素
+            document.querySelectorAll('[data-rt]').forEach(el => {
+                const key = el.getAttribute('data-rt');
+                if (key) {
+                    el.textContent = rt(key);
+                }
+            });
+
+            // 重新渲染动态内容以应用新语言
+            renderAccounts();
+            renderFlow();
+            renderSavedFlows();
+            renderAccountRouting();
+        }
+
+        // 初始化语言
+        const initLang = localStorage.getItem('anti-api-language') || 'en';
+        routingLang = initLang;
+
+        // 监听 storage 变化（跨页面同步语言）
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'anti-api-language') {
+                applyLanguage(e.newValue || 'en');
             }
         });
     </script>
