@@ -2,6 +2,7 @@
  * Protobuf Encoder for Language Server Communication
  * Based on reverse-engineered Antigravity request format
  */
+import { getAntigravityIdeVersion } from "~/lib/antigravity-client"
 
 export class ProtoEncoder {
     private buffer: number[] = []
@@ -261,7 +262,7 @@ export function encodeSendUserCascadeMessage(options: SendMessageOptions): Uint8
         apiKey,
         model,
         ideName = "antigravity",
-        ideVersion = "1.13.3b",
+        ideVersion = getAntigravityIdeVersion(),
         extensionName = "antigravity",
         locale = "en"
     } = options

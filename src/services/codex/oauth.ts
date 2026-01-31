@@ -71,6 +71,7 @@ type CodexOAuthSession = {
 
 let activeSession: CodexOAuthSession | null = null
 let callbackServer: any | null = null
+let callbackServerPort: number | null = null
 
 function decodeJwt(token: string): Record<string, any> | null {
     const parts = token.split(".")
@@ -361,6 +362,70 @@ function saveCodexProxyAuthFile(account: ProviderAccount, idToken?: string): voi
     writeFileSync(filePath, JSON.stringify(payload, null, 2))
 }
 
+function matchesIdentifier(value: string | undefined, identifiers: string[]): boolean {
+    if (!value) return false
+    const normalized = value.trim().toLowerCase()
+    return identifiers.some(id => id && normalized === id.trim().toLowerCase())
+}
+
+export function removeCodexAuthArtifacts(identifiers: string[]): { removed: string[] } {
+    const removed: string[] = []
+    const normalizedIds = identifiers.filter(Boolean)
+    if (normalizedIds.length === 0) return { removed }
+
+    const authPath = expandHomePath(CODEX_AUTH_FILE)
+    try {
+        if (existsSync(authPath)) {
+            const raw = JSON.parse(readFileSync(authPath, "utf-8"))
+            const fields = extractCodexTokenFields(raw)
+            if (matchesIdentifier(fields.accountId, normalizedIds) || matchesIdentifier(fields.email, normalizedIds)) {
+                try {
+                    Bun.file(authPath).delete()
+                } catch {
+                    // fallback for non-bun fs
+                    try { require("fs").unlinkSync(authPath) } catch { }
+                }
+                removed.push(authPath)
+            }
+        }
+    } catch {
+        // ignore parse errors
+    }
+
+    const proxyDir = expandHomePath(CODEX_PROXY_AUTH_DIR)
+    try {
+        if (existsSync(proxyDir)) {
+            const files = readdirSync(proxyDir).filter(file => file.startsWith("codex-") && file.endsWith(".json"))
+            for (const file of files) {
+                const filePath = join(proxyDir, file)
+                try {
+                    const raw = JSON.parse(readFileSync(filePath, "utf-8"))
+                    const fields = extractCodexTokenFields(raw)
+                    const filenameId = deriveAccountIdFromFilename(file)
+                    if (
+                        matchesIdentifier(fields.accountId, normalizedIds) ||
+                        matchesIdentifier(fields.email, normalizedIds) ||
+                        matchesIdentifier(filenameId, normalizedIds)
+                    ) {
+                        try {
+                            Bun.file(filePath).delete()
+                        } catch {
+                            try { require("fs").unlinkSync(filePath) } catch { }
+                        }
+                        removed.push(filePath)
+                    }
+                } catch {
+                    // ignore parse errors
+                }
+            }
+        }
+    } catch {
+        // ignore fs errors
+    }
+
+    return { removed }
+}
+
 function lastNonEmptyLine(value: string): string | undefined {
     const lines = value.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
     if (lines.length === 0) return undefined
@@ -612,7 +677,7 @@ function openBrowser(url: string): void {
     Bun.spawn([cmd, ...args], { stdout: "ignore", stderr: "ignore" })
 }
 
-function buildCodexAuthorizeUrl(): {
+function buildCodexAuthorizeUrl(port: number): {
     state: string
     authUrl: string
     fallbackUrl?: string
@@ -620,7 +685,7 @@ function buildCodexAuthorizeUrl(): {
     codeVerifier?: string
 } {
     const state = crypto.randomUUID()
-    const redirectUri = `http://localhost:${CODEX_OAUTH_CONFIG.callbackPort}${CODEX_OAUTH_CONFIG.callbackPath}`
+    const redirectUri = `http://localhost:${port}${CODEX_OAUTH_CONFIG.callbackPath}`
     const params = new URLSearchParams({
         client_id: CODEX_OAUTH_CONFIG.clientId,
         redirect_uri: redirectUri,
@@ -639,7 +704,7 @@ function buildCodexAuthorizeUrl(): {
     }
 
     const authUrl = `${CODEX_OAUTH_CONFIG.authorizeUrl}?${params.toString()}`
-    const fallbackRedirectUri = `http://127.0.0.1:${CODEX_OAUTH_CONFIG.callbackPort}${CODEX_OAUTH_CONFIG.callbackPath}`
+    const fallbackRedirectUri = `http://127.0.0.1:${port}${CODEX_OAUTH_CONFIG.callbackPath}`
     params.set("redirect_uri", fallbackRedirectUri)
     const fallbackUrl = `${CODEX_OAUTH_CONFIG.authorizeUrl}?${params.toString()}`
 
@@ -830,8 +895,9 @@ export function startCodexOAuthSession(): { state: string; authUrl: string; fall
     }
 
     callbackServer = ensureCodexCallbackServer()
+    const port = callbackServerPort ?? CODEX_OAUTH_CONFIG.callbackPort
 
-    const { state, authUrl, fallbackUrl, redirectUri, codeVerifier } = buildCodexAuthorizeUrl()
+    const { state, authUrl, fallbackUrl, redirectUri, codeVerifier } = buildCodexAuthorizeUrl(port)
     activeSession = {
         state,
         authUrl,
@@ -903,7 +969,8 @@ export async function pollCodexOAuthSession(state: string): Promise<{
 
 export async function startCodexOAuthLogin(): Promise<ProviderAccount> {
     const state = crypto.randomUUID()
-    const redirectUri = `http://localhost:${CODEX_OAUTH_CONFIG.callbackPort}${CODEX_OAUTH_CONFIG.callbackPath}`
+    const { server, port, waitForCallback } = await startOAuthCallbackServer(CODEX_OAUTH_CONFIG.callbackPort)
+    const redirectUri = `http://localhost:${port}${CODEX_OAUTH_CONFIG.callbackPath}`
 
     const params = new URLSearchParams({
         client_id: CODEX_OAUTH_CONFIG.clientId,
@@ -923,8 +990,6 @@ export async function startCodexOAuthLogin(): Promise<ProviderAccount> {
     }
 
     const authUrl = `${CODEX_OAUTH_CONFIG.authorizeUrl}?${params.toString()}`
-
-    const { server, waitForCallback } = await startOAuthCallbackServer(CODEX_OAUTH_CONFIG.callbackPort)
     consola.info("Codex OAuth callback server started")
 
     openBrowser(authUrl)
@@ -1222,7 +1287,7 @@ export async function debugCodexOAuth(): Promise<{
     probes: { authorize: CodexOAuthProbe; openid: CodexOAuthProbe }
     timestamp: string
 }> {
-    const { authUrl, fallbackUrl, state, redirectUri } = buildCodexAuthorizeUrl()
+    const { authUrl, fallbackUrl, state, redirectUri } = buildCodexAuthorizeUrl(CODEX_OAUTH_CONFIG.callbackPort)
     const authorize = await probeUrl(authUrl)
     const openid = await probeUrl("https://auth.openai.com/.well-known/openid-configuration")
     return {
@@ -1281,19 +1346,33 @@ function ensureCodexCallbackServer(): any {
         return callbackServer
     }
     try {
-        callbackServer = startCodexCallbackServer(CODEX_OAUTH_CONFIG.callbackPort, (result) => {
-            if (activeSession && activeSession.state === result.state) {
-                activeSession.callback = result
+        const startPort = CODEX_OAUTH_CONFIG.callbackPort
+        const maxOffset = 10
+        for (let offset = 0; offset <= maxOffset; offset++) {
+            const port = startPort + offset
+            try {
+                callbackServer = startCodexCallbackServer(port, (result) => {
+                    if (activeSession && activeSession.state === result.state) {
+                        activeSession.callback = result
+                    }
+                })
+                callbackServerPort = port
+                break
+            } catch (error) {
+                if (offset >= maxOffset) {
+                    throw error
+                }
             }
-        })
+        }
         return callbackServer
     } catch (error) {
-        throw new Error(`Codex callback port ${CODEX_OAUTH_CONFIG.callbackPort} is in use.`)
+        throw new Error(`Codex callback port ${CODEX_OAUTH_CONFIG.callbackPort} is in use (range ${CODEX_OAUTH_CONFIG.callbackPort}-${CODEX_OAUTH_CONFIG.callbackPort + 10}).`)
     }
 }
 
 async function startOAuthCallbackServer(port: number): Promise<{
     server: any
+    port: number
     waitForCallback: () => Promise<{ code?: string; state?: string; error?: string; redirectUri?: string }>
 }> {
     let callbackResolve: ((result: { code?: string; state?: string; error?: string; redirectUri?: string }) => void) | null = null
@@ -1301,14 +1380,30 @@ async function startOAuthCallbackServer(port: number): Promise<{
         callbackResolve = res
     })
 
-    const server = startCodexCallbackServer(port, (result) => {
-        if (callbackResolve) {
-            callbackResolve(result)
+    const startPort = port
+    const maxOffset = 10
+    let server: any = null
+    let boundPort = startPort
+    for (let offset = 0; offset <= maxOffset; offset++) {
+        const candidate = startPort + offset
+        try {
+            server = startCodexCallbackServer(candidate, (result) => {
+                if (callbackResolve) {
+                    callbackResolve(result)
+                }
+            })
+            boundPort = candidate
+            break
+        } catch (error) {
+            if (offset >= maxOffset) {
+                throw error
+            }
         }
-    })
+    }
 
     return {
         server,
+        port: boundPort,
         waitForCallback: () => callbackPromise,
     }
 }

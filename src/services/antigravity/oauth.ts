@@ -293,31 +293,48 @@ export function startOAuthCallbackServer(): Promise<{
             callbackResolve = res
         })
 
-        const server = Bun.serve({
-            port: OAUTH_CONFIG.callbackPort,
-            fetch(req) {
-                const url = new URL(req.url)
+        const startPort = OAUTH_CONFIG.callbackPort
+        const maxOffset = 10
+        let server: any = null
+        let boundPort = startPort
 
-                if (url.pathname === "/oauth-callback") {
-                    const code = url.searchParams.get("code")
-                    const state = url.searchParams.get("state")
-                    const error = url.searchParams.get("error")
+        for (let offset = 0; offset <= maxOffset; offset++) {
+            const port = startPort + offset
+            try {
+                server = Bun.serve({
+                    port,
+                    fetch(req) {
+                        const url = new URL(req.url)
 
-                    if (callbackResolve) {
-                        callbackResolve({ code: code || undefined, state: state || undefined, error: error || undefined })
-                    }
+                        if (url.pathname === "/oauth-callback") {
+                            const code = url.searchParams.get("code")
+                            const state = url.searchParams.get("state")
+                            const error = url.searchParams.get("error")
 
-                    // Redirect to official success page
-                    return Response.redirect("https://antigravity.google/auth-success", 302)
+                            if (callbackResolve) {
+                                callbackResolve({ code: code || undefined, state: state || undefined, error: error || undefined })
+                            }
+
+                            // Redirect to official success page
+                            return Response.redirect("https://antigravity.google/auth-success", 302)
+                        }
+
+                        return new Response("Not Found", { status: 404 })
+                    },
+                })
+                boundPort = port
+                break
+            } catch (error) {
+                if (offset >= maxOffset) {
+                    reject(error)
+                    return
                 }
-
-                return new Response("Not Found", { status: 404 })
-            },
-        })
+            }
+        }
 
         resolve({
             server,
-            port: OAUTH_CONFIG.callbackPort,
+            port: boundPort,
             waitForCallback: () => callbackPromise,
         })
     })

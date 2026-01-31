@@ -718,6 +718,7 @@
 
     <script>
         const API_BASE = 'http://localhost:8964';
+        const CODEX_SESSION_KEY = 'anti-api-codex-session';
         let loadingDismissed = false;
         let codexPopup = null;
         let codexPopupUrl = null;
@@ -1070,6 +1071,14 @@
                 iframe.src = '/routing';
             }
             routingLoaded = true;
+        }
+
+        function refreshRoutingIfLoaded() {
+            if (!routingLoaded) return;
+            const iframe = document.getElementById('routing-iframe');
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.location.reload();
+            }
         }
 
         function setLogsStatus(message, isError = false) {
@@ -1438,7 +1447,7 @@
 
                 if (data.success) {
                     showToast(`Removed: ${displayName}`);
-                    fetchQuota(false);
+                    refreshAll(true);
                 } else {
                     showToast(`Failed: ${data.error || 'Unknown error'}`);
                 }
@@ -1502,7 +1511,7 @@
                                 <div class="text-sm font-bold text-gray-300">${maskedName}</div>
                             </div>
                             <div class="flex items-center gap-2">
-                                <button onclick="deleteAccount('${account.accountId}', '${displayName}')" 
+                                <button onclick="event.stopPropagation(); deleteAccount('${account.accountId}', '${displayName}')"
                                         class="text-gray-600 hover:text-red-500 transition-colors text-xs px-1" title="Remove account">✕</button>
                             </div>
                         </div>
@@ -1745,6 +1754,45 @@
             status.classList.remove('hidden');
         }
 
+        function saveCodexSession(sessionId, data = {}) {
+            if (!sessionId) return;
+            const payload = {
+                sessionId,
+                user_code: data.user_code || null,
+                verification_uri: data.verification_uri || null,
+                updatedAt: Date.now(),
+            };
+            try {
+                localStorage.setItem(CODEX_SESSION_KEY, JSON.stringify(payload));
+            } catch { }
+        }
+
+        function clearCodexSession() {
+            try {
+                localStorage.removeItem(CODEX_SESSION_KEY);
+            } catch { }
+        }
+
+        function loadCodexSession() {
+            try {
+                const raw = localStorage.getItem(CODEX_SESSION_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch {
+                return null;
+            }
+        }
+
+        async function resumeCodexSession() {
+            const stored = loadCodexSession();
+            if (!stored || !stored.sessionId) return;
+            openAddAccountModal();
+            setAddAccountStatus('Resuming Codex authentication...');
+            if (stored.user_code || stored.verification_uri) {
+                showCodexDeviceFlow(stored);
+            }
+            await pollCodexStatus(stored.sessionId);
+        }
+
         async function startProviderLogin(provider) {
             setAddAccountStatus('Starting authentication...');
 
@@ -1774,7 +1822,7 @@
                         setAddAccountStatus(`Imported Copilot: ${data.login || 'Copilot'}`);
                         closeAddAccountModal();
                         await checkAuthStatus();
-                        fetchQuota(true);
+                        refreshAll(true);
                         return;
                     }
                     showCopilotDeviceFlow(data);
@@ -1782,6 +1830,7 @@
                 }
 
                 if (provider === 'codex' && data.status === 'pending') {
+                    saveCodexSession(data.session_id, data);
                     showCodexDeviceFlow(data);
                     return;
                 }
@@ -1799,7 +1848,7 @@
                     closeAddAccountModal();
                 }
                 await checkAuthStatus();
-                fetchQuota(true);
+                refreshAll(true);
             } catch (error) {
                 setAddAccountStatus(`Authentication error: ${error.message}`);
             }
@@ -1839,7 +1888,7 @@
                 setAddAccountStatus(`Connected: ${data.account?.login || 'Copilot'}`);
                 closeAddAccountModal();
                 await checkAuthStatus();
-                fetchQuota(true);
+                refreshAll(true);
                 return;
             }
             if (data.status === 'error') {
@@ -1868,16 +1917,19 @@
                 }
                 closeAddAccountModal();
                 await checkAuthStatus();
-                fetchQuota(true);
+                refreshAll(true);
+                clearCodexSession();
                 return;
             }
             if (data.status === 'error') {
                 setAddAccountStatus(data.message || 'Codex authentication failed');
+                clearCodexSession();
                 return;
             }
             if (data.user_code && data.verification_uri) {
                 document.getElementById('codex-code').textContent = data.user_code;
                 openCodexVerification(data.verification_uri);
+                saveCodexSession(sessionId, data);
             }
             setTimeout(() => pollCodexStatus(sessionId), 2000);
         }
@@ -1918,6 +1970,7 @@
         refreshAll(false);
         init3DEffect();
         initSettings();
+        resumeCodexSession();
 
         // 🆕 Auto-refresh when returning from OAuth window
         // Attach click handlers to Add buttons to track login
@@ -1933,9 +1986,12 @@
             if (document.visibilityState === 'visible' && window._loginInProgress) {
                 console.log('[Quota] Page visible after login, refreshing...');
                 setTimeout(() => {
-                    fetchQuota(true);
+                    refreshAll(true);
                     window._loginInProgress = false;
                 }, 500);
+            }
+            if (document.visibilityState === 'visible') {
+                resumeCodexSession();
             }
         });
 
@@ -1944,10 +2000,11 @@
             if (window._loginInProgress) {
                 console.log('[Quota] Window focused after login, refreshing...');
                 setTimeout(() => {
-                    fetchQuota(true);
+                    refreshAll(true);
                     window._loginInProgress = false;
                 }, 500);
             }
+            resumeCodexSession();
         });
 
         async function refreshAll(showToastMsg = false) {
@@ -1956,6 +2013,7 @@
             }
             try {
                 await fetchQuota(showToastMsg);
+                refreshRoutingIfLoaded();
                 if (window._trackUsage) {
                     await fetchUsageData(showToastMsg);
                 }

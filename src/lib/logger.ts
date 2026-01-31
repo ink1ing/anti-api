@@ -12,11 +12,18 @@ const PROVIDER_NAMES: Record<string, string> = {
     antigravity: "Antigravity",
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+    copilot: "Copilot",
+    codex: "Codex",
+    antigravity: "Antigravity",
+}
+
 // Request context for logging (set by router, read by middleware)
 export interface RequestLogContext {
     model?: string
     provider?: string
     account?: string
+    routeTag?: string
 }
 
 let lastRequestContext: RequestLogContext = {}
@@ -76,6 +83,21 @@ export function logRequest(status: number, model?: string, provider?: string, ac
     } else {
         console.log(`${status}: error`)
     }
+}
+
+export function formatSuccessLine(params: {
+    elapsed: string
+    model?: string
+    provider?: string
+    account?: string
+    routeTag?: string
+}): string {
+    const model = params.model || "unknown"
+    const provider = params.provider || "unknown"
+    const providerLabel = PROVIDER_LABELS[provider] || provider
+    const account = params.account || "-"
+    const line = `[${formatLogTime()}] 200 ${model}•${providerLabel}•${account}•${params.elapsed}s`
+    return `\x1b[32m${line}\x1b[0m`
 }
 
 /**

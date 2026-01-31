@@ -9,7 +9,7 @@ import type { ProviderAccount } from "~/services/auth/types"
 import { loadRoutingConfig, type RoutingEntry, type RoutingConfig, type AccountRoutingEntry } from "./config"
 import { getProviderModels, isHiddenCodexModel } from "./models"
 import { buildMessageStart, buildContentBlockStart, buildTextDelta, buildInputJsonDelta, buildContentBlockStop, buildMessageDelta, buildMessageStop } from "~/lib/translator"
-import { formatLogTime, setRequestLogContext } from "~/lib/logger"
+import { formatSuccessLine, setRequestLogContext } from "~/lib/logger"
 import type { AuthProvider } from "~/services/auth/types"
 import { recordUsage } from "~/services/usage-tracker"
 
@@ -46,6 +46,17 @@ type ProviderUsage = {
         inputTokens?: number
         outputTokens?: number
     }
+}
+
+function normalizeOfficialModelId(model: string): string {
+    const normalized = model?.trim()
+    if (!normalized) return model
+    const map: Record<string, string> = {
+        "claude-sonnet-4.5": "claude-sonnet-4-5",
+        "claude-sonnet-4.5-thinking": "claude-sonnet-4-5-thinking",
+        "claude-opus-4.5-thinking": "claude-opus-4-5-thinking",
+    }
+    return map[normalized] || normalized
 }
 
 function isEntryUsable(entry: RoutingEntry): boolean {
@@ -434,10 +445,11 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
     const attemptEntry = async (entry: RoutingEntry) => {
         if (entry.provider === "antigravity") {
             const accountId = entry.accountId === "auto" ? undefined : entry.accountId
-            setRequestLogContext({ model: entry.modelId, provider: "antigravity", account: entry.accountId })
+            setRequestLogContext({ model: entry.modelId, provider: "antigravity", account: entry.accountId, routeTag: "fr" })
             return await createChatCompletionWithOptions({ ...request, model: entry.modelId }, {
                 accountId,
                 allowRotation: accountId ? false : true,
+                routeTag: "fr",
             })
         }
 
@@ -446,14 +458,14 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
             throw new Error("Account not found")
         }
         const accountDisplay = account.login || account.email || entry.accountId
-        setRequestLogContext({ model: entry.modelId, provider: entry.provider, account: accountDisplay })
+        setRequestLogContext({ model: entry.modelId, provider: entry.provider, account: accountDisplay, routeTag: "fr" })
 
         if (entry.provider === "codex") {
             const startTime = Date.now()
             const result = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
             recordProviderUsage(entry.modelId, result)
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-            console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Codex >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+            console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "fr" }))
             return result
         }
 
@@ -462,7 +474,7 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
             const result = await createCopilotCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
             recordProviderUsage(entry.modelId, result)
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-            console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Copilot >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+            console.log(formatSuccessLine({ elapsed, model: request.model, provider: "copilot", account: accountDisplay, routeTag: "fr" }))
             return result
         }
 
@@ -545,10 +557,11 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
         try {
             if (entry.provider === "antigravity") {
                 const accountId = entry.accountId === "auto" ? undefined : entry.accountId
-                setRequestLogContext({ model: entry.modelId, provider: "antigravity", account: entry.accountId })
+                setRequestLogContext({ model: entry.modelId, provider: "antigravity", account: entry.accountId, routeTag: "fr" })
                 return await createChatCompletionWithOptions({ ...request, model: entry.modelId }, {
                     accountId,
                     allowRotation: accountId ? false : true,
+                    routeTag: "fr",
                 })
             }
 
@@ -557,14 +570,14 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
                 throw new Error("Account not found")
             }
             const accountDisplay = account.login || account.email || entry.accountId
-            setRequestLogContext({ model: entry.modelId, provider: entry.provider, account: accountDisplay })
+            setRequestLogContext({ model: entry.modelId, provider: entry.provider, account: accountDisplay, routeTag: "fr" })
 
             if (entry.provider === "codex") {
                 const startTime = Date.now()
                 const result = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
                 recordProviderUsage(entry.modelId, result)
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-                console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Codex >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+                console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "fr" }))
                 return result
             }
 
@@ -573,7 +586,7 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
                 const result = await createCopilotCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
                 recordProviderUsage(entry.modelId, result)
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-                console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Copilot >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+                console.log(formatSuccessLine({ elapsed, model: request.model, provider: "copilot", account: accountDisplay, routeTag: "fr" }))
                 return result
             }
         } catch (error) {
@@ -606,10 +619,11 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 if (isLimited) continue
                 if (entries.length > 1 && accountManager.isAccountInFlight(entry.accountId)) continue
                 const accountDisplay = getAccountDisplay("antigravity", entry.accountId)
-                setRequestLogContext({ model: request.model, provider: "antigravity", account: accountDisplay })
+                setRequestLogContext({ model: request.model, provider: "antigravity", account: accountDisplay, routeTag: "ar" })
                 const result = await createChatCompletionWithOptions({ ...request, model: request.model }, {
                     accountId: entry.accountId,
                     allowRotation: false,
+                    routeTag: "ar",
                 })
                 accountState.cursor = index
                 return result
@@ -624,14 +638,14 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 continue
             }
             const accountDisplay = account.login || account.email || entry.accountId
-            setRequestLogContext({ model: request.model, provider: entry.provider, account: accountDisplay })
+            setRequestLogContext({ model: request.model, provider: entry.provider, account: accountDisplay, routeTag: "ar" })
 
             if (entry.provider === "codex") {
                 const startTime = Date.now()
                 const result = await createCodexCompletion(account, request.model, request.messages, request.tools, request.maxTokens)
                 recordProviderUsage(request.model, result)
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-                console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Codex >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+                console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "ar" }))
                 accountState.cursor = index
                 return result
             }
@@ -641,7 +655,7 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 const result = await createCopilotCompletion(account, request.model, request.messages, request.tools, request.maxTokens)
                 recordProviderUsage(request.model, result)
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-                console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Copilot >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+                console.log(formatSuccessLine({ elapsed, model: request.model, provider: "copilot", account: accountDisplay, routeTag: "ar" }))
                 accountState.cursor = index
                 return result
             }
@@ -703,9 +717,11 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
     async function* streamEntry(entry: RoutingEntry): AsyncGenerator<string, void, unknown> {
         if (entry.provider === "antigravity") {
             const accountId = entry.accountId === "auto" ? undefined : entry.accountId
+            setRequestLogContext({ model: entry.modelId, provider: "antigravity", account: entry.accountId, routeTag: "fr" })
             yield* createChatCompletionStreamWithOptions({ ...request, model: entry.modelId }, {
                 accountId,
                 allowRotation: accountId ? false : true,
+                routeTag: "fr",
             })
             return
         }
@@ -715,6 +731,7 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
             throw new Error("Account not found")
         }
         const accountDisplay = account.login || account.email || entry.accountId
+        setRequestLogContext({ model: entry.modelId, provider: entry.provider, account: accountDisplay, routeTag: "fr" })
 
         let completion
         let startTime = 0
@@ -754,10 +771,10 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
 
         if (entry.provider === "codex") {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-            console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Codex >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+            console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "fr" }))
         } else if (entry.provider === "copilot") {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-            console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Copilot >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+            console.log(formatSuccessLine({ elapsed, model: request.model, provider: "copilot", account: accountDisplay, routeTag: "fr" }))
         }
     }
 
@@ -836,9 +853,11 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
         const entry = entries[fallbackIndex]
         if (entry.provider === "antigravity") {
             const accountId = entry.accountId === "auto" ? undefined : entry.accountId
+            setRequestLogContext({ model: entry.modelId, provider: "antigravity", account: entry.accountId, routeTag: "fr" })
             yield* createChatCompletionStreamWithOptions({ ...request, model: entry.modelId }, {
                 accountId,
                 allowRotation: accountId ? false : true,
+                routeTag: "fr",
             })
             return
         }
@@ -848,6 +867,7 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
             throw new Error("Account not found")
         }
         const accountDisplay = account.login || account.email || entry.accountId
+        setRequestLogContext({ model: entry.modelId, provider: entry.provider, account: accountDisplay, routeTag: "fr" })
 
         let completion
         let startTime = 0
@@ -887,10 +907,10 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
 
         if (entry.provider === "codex") {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-            console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Codex >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+            console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "ar" }))
         } else if (entry.provider === "copilot") {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-            console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Copilot >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+            console.log(formatSuccessLine({ elapsed, model: request.model, provider: "copilot", account: accountDisplay, routeTag: "ar" }))
         }
         return
     }
@@ -918,9 +938,12 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 const isLimited = accountManager.isAccountRateLimited(entry.accountId) || isRouterRateLimited("antigravity", entry.accountId)
                 if (isLimited) continue
                 if (entries.length > 1 && accountManager.isAccountInFlight(entry.accountId)) continue
+                const accountDisplay = getAccountDisplay("antigravity", entry.accountId)
+                setRequestLogContext({ model: request.model, provider: "antigravity", account: accountDisplay, routeTag: "ar" })
                 yield* createChatCompletionStreamWithOptions({ ...request, model: request.model }, {
                     accountId: entry.accountId,
                     allowRotation: false,
+                    routeTag: "ar",
                 })
                 accountState.cursor = index
                 return
@@ -935,6 +958,7 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 continue
             }
             const accountDisplay = account.login || account.email || entry.accountId
+            setRequestLogContext({ model: request.model, provider: entry.provider, account: accountDisplay, routeTag: "ar" })
 
             let completion
             let startTime = 0
@@ -974,10 +998,10 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
 
             if (entry.provider === "codex") {
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-                console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Codex >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+                console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "ar" }))
             } else if (entry.provider === "copilot") {
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-                console.log(`\x1b[32m[${formatLogTime()}] 200: from ${request.model} > Copilot >> ${accountDisplay} (${elapsed}s)\x1b[0m`)
+                console.log(formatSuccessLine({ elapsed, model: request.model, provider: "copilot", account: accountDisplay, routeTag: "ar" }))
             }
             accountState.cursor = index
             return
@@ -1017,14 +1041,16 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
 }
 
 export async function* createRoutedCompletionStream(request: RoutedRequest): AsyncGenerator<string, void, unknown> {
-    if (isHiddenCodexModel(request.model)) {
+    const normalizedModel = normalizeOfficialModelId(request.model)
+    if (isHiddenCodexModel(normalizedModel)) {
         throw new RoutingError("Model is not available", 400)
     }
     const config = loadRoutingConfig()
 
-    if (isOfficialModel(request.model)) {
-        const accountEntries = resolveAccountEntries(config, request.model)
-        yield* createAccountCompletionStreamWithEntries(request, accountEntries)
+    if (isOfficialModel(normalizedModel)) {
+        const accountEntries = resolveAccountEntries(config, normalizedModel)
+        const normalizedRequest = { ...request, model: normalizedModel }
+        yield* createAccountCompletionStreamWithEntries(normalizedRequest, accountEntries)
         return
     }
 

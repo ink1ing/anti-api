@@ -125,7 +125,6 @@ run_api_once() {
 }
 
 if [ "$AUTO_RESTART" = "true" ]; then
-    echo "Auto Restart (Watchdog) enabled"
     while true; do
         run_api_once
         exit_code=$?

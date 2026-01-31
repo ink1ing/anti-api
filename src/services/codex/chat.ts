@@ -15,6 +15,10 @@ const CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
 const CHAT_COMPLETIONS_PATH = "/chat/completions"
 const RESPONSES_PATH = "/responses"
 const DEFAULT_FALLBACK_MODEL = process.env.CODEX_FALLBACK_MODEL || "gpt-5"
+const CODEX_MAX_RETRIES = 2
+const CODEX_RETRY_BASE_MS = 600
+const CODEX_RETRY_JITTER_MS = 300
+const CODEX_RETRY_STATUSES = new Set([429, 500, 502, 503, 504, 521, 522, 524])
 
 // Codex-specific headers matching CLIProxyAPI
 function getCodexHeaders(accessToken: string, accountId?: string): Record<string, string> {
@@ -78,6 +82,19 @@ function shouldRetryInsecure(error: unknown): boolean {
     if (message.includes("timeout") || message.includes("timed out") || message.includes("econnreset")) return true
     const fallback = String(error).toLowerCase()
     return fallback.includes("fetch failed") || fallback.includes("network") || fallback.includes("connection")
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function getRetryDelay(attempt: number): number {
+    const jitter = Math.floor(Math.random() * CODEX_RETRY_JITTER_MS)
+    return CODEX_RETRY_BASE_MS * Math.pow(2, attempt) + jitter
+}
+
+function isRetryableStatus(status: number): boolean {
+    return CODEX_RETRY_STATUSES.has(status)
 }
 
 async function fetchInsecureJson(
@@ -397,44 +414,61 @@ async function requestChatCompletion(
     const url = `${CODEX_API_BASE}${CHAT_COMPLETIONS_PATH}`
     const headers = getCodexHeaders(account.accessToken, account.id)
 
-    try {
-        const response = await fetchWithOptionalTls(url, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(requestBody),
-        })
+    let lastError: unknown
+    for (let attempt = 0; attempt <= CODEX_MAX_RETRIES; attempt++) {
+        try {
+            const response = await fetchWithOptionalTls(url, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(requestBody),
+            })
 
-        if (!response.ok) {
-            const errorText = await response.text()
-            const retryAfter = response.headers.get("retry-after") || undefined
-            throw new UpstreamError("codex", response.status, errorText, retryAfter)
-        }
+            if (!response.ok) {
+                const errorText = await response.text()
+                const retryAfter = response.headers.get("retry-after") || undefined
+                if (isRetryableStatus(response.status) && attempt < CODEX_MAX_RETRIES) {
+                    await sleep(getRetryDelay(attempt))
+                    continue
+                }
+                throw new UpstreamError("codex", response.status, errorText, retryAfter)
+            }
 
-        const data = await response.json() as OpenAIResponse
-        return { completion: data, model }
-    } catch (error) {
-        if (!shouldRetryInsecure(error)) {
+            const data = await response.json() as OpenAIResponse
+            return { completion: data, model }
+        } catch (error) {
+            lastError = error
+            if (shouldRetryInsecure(error)) {
+                if (isCertificateError(error)) {
+                    consola.warn("Codex TLS error detected, retrying with insecure agent")
+                } else {
+                    consola.warn("Codex request failed, retrying with insecure agent")
+                }
+                const insecure = await fetchInsecureJson(url, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(requestBody),
+                })
+                if (insecure.status < 200 || insecure.status >= 300) {
+                    if (isRetryableStatus(insecure.status) && attempt < CODEX_MAX_RETRIES) {
+                        await sleep(getRetryDelay(attempt))
+                        continue
+                    }
+                    throw new UpstreamError("codex", insecure.status, insecure.text)
+                }
+                const data = insecure.data as OpenAIResponse | null
+                if (!data) {
+                    throw new UpstreamError("codex", insecure.status, insecure.text || "Empty response")
+                }
+                return { completion: data, model }
+            }
+            if (attempt < CODEX_MAX_RETRIES) {
+                await sleep(getRetryDelay(attempt))
+                continue
+            }
             throw error
         }
-        if (isCertificateError(error)) {
-            consola.warn("Codex TLS error detected, retrying with insecure agent")
-        } else {
-            consola.warn("Codex request failed, retrying with insecure agent")
-        }
-        const insecure = await fetchInsecureJson(url, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(requestBody),
-        })
-        if (insecure.status < 200 || insecure.status >= 300) {
-            throw new UpstreamError("codex", insecure.status, insecure.text)
-        }
-        const data = insecure.data as OpenAIResponse | null
-        if (!data) {
-            throw new UpstreamError("codex", insecure.status, insecure.text || "Empty response")
-        }
-        return { completion: data, model }
     }
+    throw lastError || new UpstreamError("codex", 500, "Codex request failed")
 }
 
 async function requestResponsesCompletion(
@@ -476,21 +510,31 @@ async function requestResponsesCompletion(
     const url = `${CODEX_API_BASE}${RESPONSES_PATH}`
     const headers = getCodexHeaders(account.accessToken, account.id)
 
-    // Always use insecure fetch for ChatGPT backend to avoid certificate errors
-    const insecure = await fetchInsecureJson(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(requestBody),
-    })
+    let lastError: unknown
+    for (let attempt = 0; attempt <= CODEX_MAX_RETRIES; attempt++) {
+        // Always use insecure fetch for ChatGPT backend to avoid certificate errors
+        const insecure = await fetchInsecureJson(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(requestBody),
+        })
 
-    if (insecure.status < 200 || insecure.status >= 300) {
-        consola.error(`Codex error ${insecure.status}:`, insecure.text.slice(0, 500))
-        throw new UpstreamError("codex", insecure.status, insecure.text)
+        if (insecure.status < 200 || insecure.status >= 300) {
+            lastError = new UpstreamError("codex", insecure.status, insecure.text)
+            if (isRetryableStatus(insecure.status) && attempt < CODEX_MAX_RETRIES) {
+                await sleep(getRetryDelay(attempt))
+                continue
+            }
+            consola.error(`Codex error ${insecure.status}:`, insecure.text.slice(0, 500))
+            throw lastError
+        }
+
+        // Parse SSE response (ChatGPT backend returns SSE stream format)
+        const data = parseCodexSSEResponse(insecure.text)
+        return { completion: buildCompletionFromResponses(data), model }
     }
 
-    // Parse SSE response (ChatGPT backend returns SSE stream format)
-    const data = parseCodexSSEResponse(insecure.text)
-    return { completion: buildCompletionFromResponses(data), model }
+    throw lastError || new UpstreamError("codex", 500, "Codex request failed")
 }
 
 export async function createCodexCompletion(

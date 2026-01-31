@@ -19,13 +19,13 @@ import { getAggregatedQuota } from "./services/quota-aggregator"
 import { initAuth, isAuthenticated } from "./services/antigravity/login"
 import { accountManager } from "./services/antigravity/account-manager"
 import { loadRoutingConfig } from "./services/routing/config"
-import { importCodexAuthSources } from "./services/codex/oauth"
+import { importCodexAuthSources, removeCodexAuthArtifacts } from "./services/codex/oauth"
 import { loadSettings, saveSettings } from "./services/settings"
 import { pingAccount } from "./services/ping"
 import { summarizeUpstreamError, UpstreamError } from "./lib/error"
 import { authStore } from "./services/auth/store"
 
-import { getRequestLogContext } from "./lib/logger"
+import { formatLogTime, getRequestLogContext } from "./lib/logger"
 import { initLogCapture, setLogCaptureEnabled } from "./lib/log-buffer"
 
 export const server = new Hono()
@@ -43,6 +43,9 @@ server.use(async (c, next) => {
     // Only log errors
     if (status >= 400) {
         const ctx = getRequestLogContext()
+        const method = c.req.method
+        const path = c.req.path
+        const debugInfo = status === 400 ? ` (${method} ${path}${reason ? ` - ${reason}` : ""})` : ""
         if (ctx.model && ctx.provider) {
             const providerNames: Record<string, string> = {
                 copilot: "GitHub Copilot",
@@ -51,9 +54,10 @@ server.use(async (c, next) => {
             }
             const providerName = providerNames[ctx.provider] || ctx.provider
             const accountPart = ctx.account ? ` >> ${ctx.account}` : ""
-            console.log(`${status}: from ${ctx.model} > ${providerName}${accountPart}`)
+            const routePart = ctx.routeTag ? `•${ctx.routeTag}` : ""
+            console.log(`[${formatLogTime()}] ${status}: from ${ctx.model} > ${providerName}${accountPart}${routePart}${debugInfo}`)
         } else {
-            console.log(`${status}: ${reason || "error"}`)
+            console.log(`[${formatLogTime()}] ${status}: ${reason || "error"}${debugInfo}`)
         }
     }
     // All successful requests are silent (detailed 200 logs are handled elsewhere)
@@ -261,6 +265,11 @@ server.post("/accounts/ping", async (c) => {
 // 删除账号 - API（同时清理 routing 配置）
 server.delete("/accounts/:id", async (c) => {
     const accountId = c.req.param("id")
+    const codexAccount = authStore.getAccount("codex", accountId) ||
+        authStore.listAccounts("codex").find(acc => acc.email === accountId)
+    const codexIdentifiers = new Set<string>()
+    codexIdentifiers.add(accountId)
+    if (codexAccount?.email) codexIdentifiers.add(codexAccount.email)
 
     // 先尝试从 accountManager 删除 (antigravity 内存管理)
     let success = accountManager.removeAccount(accountId)
@@ -311,6 +320,9 @@ server.delete("/accounts/:id", async (c) => {
             }
         } catch (e) {
             console.error("Failed to cleanup routing config:", e)
+        }
+        if (codexAccount) {
+            removeCodexAuthArtifacts(Array.from(codexIdentifiers))
         }
         return c.json({ success: true, message: `Account ${accountId} removed` })
     }

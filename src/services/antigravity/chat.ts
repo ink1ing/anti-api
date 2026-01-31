@@ -11,7 +11,8 @@ import { type ClaudeMessage, type ClaudeTool } from "~/lib/translator"
 import { determineRetryStrategy, applyRetryDelay } from "~/lib/retry"
 import { UpstreamError } from "~/lib/error"
 import { cleanJsonSchemaForGemini } from "~/lib/json-schema-cleaner"
-import { formatLogTime, setRequestLogContext } from "~/lib/logger"
+import { formatSuccessLine, setRequestLogContext } from "~/lib/logger"
+import { getAntigravityUserAgent } from "~/lib/antigravity-client"
 
 accountManager.load()
 
@@ -21,7 +22,7 @@ const ANTIGRAVITY_BASE_URLS = [
     "https://cloudcode-pa.googleapis.com",
 ]
 const STREAM_ENDPOINT = "/v1internal:streamGenerateContent"
-const DEFAULT_USER_AGENT = "antigravity/1.11.9 windows/amd64"
+const DEFAULT_USER_AGENT = getAntigravityUserAgent()
 const MAX_RETRY_ATTEMPTS = 1  // v2.0.1 恢复：简化重试，避免级联 429
 const MAX_NON_QUOTA_429_RETRIES = 2  // Non-quota 429 retries before switching accounts
 const MAX_NON_QUOTA_429_WAIT_MS = 4000  // Upper bound for non-quota 429 wait time
@@ -147,6 +148,9 @@ const MODEL_MAPPING: Record<string, string> = {
     "claude-sonnet-4-5": "claude-sonnet-4-5",
     "claude-sonnet-4-5-thinking": "claude-sonnet-4-5-thinking",
     "claude-opus-4-5-thinking": "claude-opus-4-5-thinking",
+    "claude-sonnet-4.5": "claude-sonnet-4-5",
+    "claude-sonnet-4.5-thinking": "claude-sonnet-4-5-thinking",
+    "claude-opus-4.5-thinking": "claude-opus-4-5-thinking",
     "claude-sonnet-4-5-20251001": "claude-sonnet-4-5",
     "gemini-3-pro-high": "gemini-3-pro-high",
     "gemini-3-pro-low": "gemini-3-pro-low",
@@ -448,7 +452,7 @@ function claudeToAntigravity(
 
     return {
         model,
-        userAgent: "antigravity",
+        userAgent: DEFAULT_USER_AGENT,
         requestType: "agent",
         project: projectId,
         requestId: "agent-" + crypto.randomUUID(),
@@ -511,7 +515,8 @@ async function sendRequestSse(
     accessToken: string,
     accountId?: string,
     allowRotation: boolean = true,
-    modelName?: string
+    modelName?: string,
+    routeTag?: string
 ): Promise<string> {
     const startTime = Date.now()
     let lastError: Error | null = null
@@ -546,8 +551,14 @@ async function sendRequestSse(
                     // Log 200 success with actual account used and elapsed time (green)
                     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
                     const account = currentAccountId ? await accountManager.getAccountById(currentAccountId) : null
-                    const accountPart = account?.email ? ` >> ${account.email}` : (currentAccountId ? ` >> ${currentAccountId}` : "")
-                    console.log(`\x1b[32m[${formatLogTime()}] 200: from ${modelName || "unknown"} > Antigravity${accountPart} (${elapsed}s)\x1b[0m`)
+                    const accountDisplay = account?.email || currentAccountId || "-"
+                    console.log(formatSuccessLine({
+                        elapsed,
+                        model: modelName || "unknown",
+                        provider: "antigravity",
+                        account: accountDisplay,
+                        routeTag,
+                    }))
 
                     return await response.text()
                 }
@@ -704,7 +715,8 @@ async function* sendRequestSseStreaming(
     accessToken: string,
     accountId?: string,
     allowRotation: boolean = true,
-    modelName?: string
+    modelName?: string,
+    routeTag?: string
 ): AsyncGenerator<string, void, unknown> {
     const startTime = Date.now()
     const IDLE_TIMEOUT_MS = 900000  // 超过 15 分钟无数据则中断
@@ -875,8 +887,14 @@ async function* sendRequestSseStreaming(
                 // 成功完成 - 在 return 之前记录日志
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
                 const account = currentAccountId ? await accountManager.getAccountById(currentAccountId) : null
-                const accountPart = account?.email ? ` >> ${account.email}` : (currentAccountId ? ` >> ${currentAccountId}` : "")
-                console.log(`\x1b[32m[${formatLogTime()}] 200: from ${modelName || "unknown"} > Antigravity${accountPart} (${elapsed}s)\x1b[0m`)
+                const accountDisplay = account?.email || currentAccountId || "-"
+                console.log(formatSuccessLine({
+                    elapsed,
+                    model: modelName || "unknown",
+                    provider: "antigravity",
+                    account: accountDisplay,
+                    routeTag,
+                }))
                 return
 
             } catch (error) {
@@ -942,7 +960,7 @@ export async function createChatCompletion(request: ChatRequest): Promise<ChatRe
 
 export async function createChatCompletionWithOptions(
     request: ChatRequest,
-    options: { accountId?: string; allowRotation?: boolean } = {}
+    options: { accountId?: string; allowRotation?: boolean; routeTag?: string } = {}
 ): Promise<ChatResponse> {
     let accessToken: string
     let accountId: string | undefined
@@ -974,7 +992,9 @@ export async function createChatCompletionWithOptions(
     }
 
     // Set log context for request logging
-    setRequestLogContext({ model: request.model, provider: "antigravity", account: accountEmail })
+    setRequestLogContext({ model: request.model, provider: "antigravity", account: accountEmail, routeTag: options.routeTag })
+
+    setRequestLogContext({ model: request.model, provider: "antigravity", account: accountEmail, routeTag: options.routeTag })
 
     if (accountId) {
         releaseAccountLock = await accountManager.acquireAccountLock(accountId)
@@ -996,7 +1016,8 @@ export async function createChatCompletionWithOptions(
             accessToken,
             accountId,
             options.allowRotation ?? true,
-            request.model
+            request.model,
+            options.routeTag
         )
         const sseChunks = collectSseChunks(rawSse)
         const rawResponse = sseChunks.length > 0 ? JSON.stringify(sseChunks) : rawSse
@@ -1025,7 +1046,7 @@ export async function* createChatCompletionStream(request: ChatRequest): AsyncGe
 
 export async function* createChatCompletionStreamWithOptions(
     request: ChatRequest,
-    options: { accountId?: string; allowRotation?: boolean } = {}
+    options: { accountId?: string; allowRotation?: boolean; routeTag?: string } = {}
 ): AsyncGenerator<string, void, unknown> {
     let accessToken: string
     let accountId: string | undefined
@@ -1077,7 +1098,8 @@ export async function* createChatCompletionStreamWithOptions(
             accessToken,
             accountId,
             options.allowRotation ?? true,
-            request.model
+            request.model,
+            options.routeTag
         )
 
         let blockIndex = 0
