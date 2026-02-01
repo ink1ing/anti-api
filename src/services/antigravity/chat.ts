@@ -21,7 +21,7 @@ const ANTIGRAVITY_BASE_URLS = [
     "https://cloudcode-pa.googleapis.com",
 ]
 const STREAM_ENDPOINT = "/v1internal:streamGenerateContent"
-const DEFAULT_USER_AGENT = "antigravity/1.11.9 windows/amd64"
+const DEFAULT_USER_AGENT = process.env.ANTI_API_USER_AGENT || "antigravity/1.15.8 windows/amd64"
 const MAX_RETRY_ATTEMPTS = 1  // v2.0.1 恢复：简化重试，避免级联 429
 const MAX_NON_QUOTA_429_RETRIES = 2  // Non-quota 429 retries before switching accounts
 const MAX_NON_QUOTA_429_WAIT_MS = 4000  // Upper bound for non-quota 429 wait time

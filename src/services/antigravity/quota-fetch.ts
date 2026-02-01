@@ -3,7 +3,7 @@ import { generateMockProjectId } from "./project-id"
 import { UpstreamError } from "~/lib/error"
 
 const CLOUD_CODE_BASE_URL = "https://cloudcode-pa.googleapis.com"
-const USER_AGENT = "antigravity/1.11.3 windows/amd64"
+const USER_AGENT = process.env.ANTI_API_USER_AGENT || "antigravity/1.15.8 windows/amd64"
 
 export type AntigravityModelInfo = {
     remainingFraction?: number

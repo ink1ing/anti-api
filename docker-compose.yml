@@ -11,6 +11,7 @@ services:
       ANTI_API_DATA_DIR: /app/data
       ANTI_API_OAUTH_NO_OPEN: "1"
       ANTI_API_NO_OPEN: "1"
+      ANTI_API_USER_AGENT: antigravity/1.15.8 windows/amd64
     volumes:
       - ${HOME}/.anti-api:/app/data
     restart: unless-stopped

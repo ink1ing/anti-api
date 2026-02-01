@@ -24,7 +24,7 @@ export const OAUTH_CONFIG = {
     ],
 }
 
-const PROJECT_USER_AGENT = "antigravity/1.11.9 windows/amd64"
+const PROJECT_USER_AGENT = process.env.ANTI_API_USER_AGENT || "antigravity/1.15.8 windows/amd64"
 
 /**
  * 生成随机 state 用于 CSRF 保护
