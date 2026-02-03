@@ -39,6 +39,7 @@ const QUOTA_CACHE_DIR = getDataDir()
 const QUOTA_CACHE_FILE = join(QUOTA_CACHE_DIR, "quota-cache.json")
 let quotaCache = new Map<string, QuotaCacheEntry>()
 let cacheLoaded = false
+const PROVIDER_FETCH_TIMEOUT_MS = 4000
 
 function getCacheKey(provider: QuotaCacheEntry["provider"], accountId: string): string {
     return `${provider}:${accountId}`
@@ -80,6 +81,64 @@ function getCachedBars(provider: QuotaCacheEntry["provider"], accountId: string)
     return cached?.bars || null
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: () => T, label: string): Promise<T> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+        return promise
+    }
+    return new Promise(resolve => {
+        let settled = false
+        const timer = setTimeout(() => {
+            if (settled) return
+            settled = true
+            consola.warn(`${label} quota fetch timed out after ${timeoutMs}ms, using cached data`)
+            resolve(fallback())
+        }, timeoutMs)
+        promise.then(result => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            resolve(result)
+        }).catch(error => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            consola.warn(`${label} quota fetch failed, using cached data:`, error)
+            resolve(fallback())
+        })
+    })
+}
+
+function defaultCodexBars(): AccountBar[] {
+    return [
+        { key: "session", label: "5h", percentage: 0 },
+        { key: "week", label: "week", percentage: 0 },
+    ]
+}
+
+function defaultCopilotBars(): AccountBar[] {
+    return [{ key: "premium", label: "premium", percentage: 0 }]
+}
+
+function buildCachedViews(provider: QuotaCacheEntry["provider"], accounts: ProviderAccount[]): AccountQuotaView[] {
+    return accounts.map(account => {
+        const displayName = account.email || account.login || account.id
+        const cachedBars = getCachedBars(provider, account.id)
+        const bars = cachedBars || (
+            provider === "antigravity"
+                ? buildAntigravityBars({})
+                : provider === "codex"
+                    ? defaultCodexBars()
+                    : defaultCopilotBars()
+        )
+        return {
+            provider,
+            accountId: account.id,
+            displayName,
+            bars,
+        }
+    })
+}
+
 export async function getAggregatedQuota(): Promise<{
     timestamp: string
     accounts: AccountQuotaView[]
@@ -92,9 +151,24 @@ export async function getAggregatedQuota(): Promise<{
     const copilotAccounts = authStore.listAccounts("copilot")
 
     const [antigravity, codex, copilot] = await Promise.all([
-        fetchAntigravityQuotas(antigravityAccounts),
-        fetchCodexQuotas(codexAccounts),
-        fetchCopilotQuotas(copilotAccounts),
+        withTimeout(
+            fetchAntigravityQuotas(antigravityAccounts),
+            PROVIDER_FETCH_TIMEOUT_MS,
+            () => buildCachedViews("antigravity", antigravityAccounts),
+            "Antigravity",
+        ),
+        withTimeout(
+            fetchCodexQuotas(codexAccounts),
+            PROVIDER_FETCH_TIMEOUT_MS,
+            () => buildCachedViews("codex", codexAccounts),
+            "Codex",
+        ),
+        withTimeout(
+            fetchCopilotQuotas(copilotAccounts),
+            PROVIDER_FETCH_TIMEOUT_MS,
+            () => buildCachedViews("copilot", copilotAccounts),
+            "Copilot",
+        ),
     ])
     saveQuotaCache()
 

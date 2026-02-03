@@ -86,7 +86,24 @@ safe_kill_by_port "$RUST_PROXY_PORT" "anti-proxy|rust-proxy"
 
 # 加载 bun 路径（如果已安装）
 export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
+export PATH="$BUN_INSTALL/bin:$HOME/.local/bin:$PATH"
+
+# 确保 ngrok 可用（若未安装则自动下载）
+if ! command -v ngrok >/dev/null 2>&1; then
+    mkdir -p "$HOME/.local/bin"
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "arm64" ]; then
+        NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-darwin-arm64.zip"
+    else
+        NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-darwin-amd64.zip"
+    fi
+    TMP_ZIP="$(mktemp -t ngrok.zip)"
+    if curl -fsSL "$NGROK_URL" -o "$TMP_ZIP"; then
+        unzip -o -q "$TMP_ZIP" -d "$HOME/.local/bin"
+        chmod +x "$HOME/.local/bin/ngrok" 2>/dev/null || true
+    fi
+    rm -f "$TMP_ZIP" 2>/dev/null || true
+fi
 
 # 检查 bun
 if ! command -v bun &> /dev/null; then

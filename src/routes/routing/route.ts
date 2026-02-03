@@ -11,6 +11,36 @@ import type { ProviderAccountSummary } from "~/services/auth/types"
 
 export const routingRouter = new Hono()
 
+function resolveAccountLabel(provider: "antigravity" | "codex" | "copilot", accountId: string, fallback?: string): string {
+    if (accountId === "auto") return "auto"
+    const account = authStore.getAccount(provider, accountId)
+    return account?.label || account?.email || account?.login || fallback || accountId
+}
+
+function syncFlowLabels(flows: RoutingFlow[]): RoutingFlow[] {
+    return flows.map(flow => ({
+        ...flow,
+        entries: flow.entries.map(entry => ({
+            ...entry,
+            accountLabel: resolveAccountLabel(entry.provider, entry.accountId, entry.accountLabel),
+        })),
+    }))
+}
+
+function syncAccountRoutingLabels(accountRouting?: AccountRoutingConfig): AccountRoutingConfig | undefined {
+    if (!accountRouting) return accountRouting
+    return {
+        ...accountRouting,
+        routes: accountRouting.routes.map(route => ({
+            ...route,
+            entries: route.entries.map(entry => ({
+                ...entry,
+                accountLabel: resolveAccountLabel(entry.provider, entry.accountId, entry.accountLabel),
+            })),
+        })),
+    }
+}
+
 routingRouter.get("/", (c) => {
     try {
         const htmlPath = join(import.meta.dir, "../../../public/routing.html")
@@ -24,6 +54,11 @@ routingRouter.get("/", (c) => {
 routingRouter.get("/config", async (c) => {
     accountManager.load()
     const config = loadRoutingConfig()
+    const syncedConfig = {
+        ...config,
+        flows: syncFlowLabels(config.flows),
+        accountRouting: syncAccountRoutingLabels(config.accountRouting),
+    }
 
     const listSummariesInOrder = (provider: "antigravity" | "codex" | "copilot"): ProviderAccountSummary[] => {
         const accounts = authStore.listAccounts(provider)
@@ -68,7 +103,7 @@ routingRouter.get("/config", async (c) => {
         // Quota fetch is optional, continue without it
     }
 
-    return c.json({ config, accounts, models, quota })
+    return c.json({ config: syncedConfig, accounts, models, quota })
 })
 
 routingRouter.post("/config", async (c) => {
@@ -92,6 +127,7 @@ routingRouter.post("/config", async (c) => {
                 ...entry,
                 id: entry.id || randomUUID(),
                 label: entry.label || `${entry.provider}:${entry.modelId}`,
+                accountLabel: resolveAccountLabel(entry.provider, entry.accountId, entry.accountLabel),
             }))
             : [],
     }))
@@ -108,6 +144,7 @@ routingRouter.post("/config", async (c) => {
                         ? route.entries.map(entry => ({
                             ...entry,
                             id: entry.id || randomUUID(),
+                            accountLabel: resolveAccountLabel(entry.provider, entry.accountId, entry.accountLabel),
                         }))
                         : [],
                 }))

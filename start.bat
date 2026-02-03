@@ -30,6 +30,22 @@ if exist "%USERPROFILE%\.bun\bin\bun.exe" (
     set "PATH=%USERPROFILE%\.bun\bin;%PATH%"
 )
 
+:: 确保 ngrok 可用（若未安装则自动下载）
+where ngrok >nul 2>&1
+if %errorlevel% neq 0 (
+    set "NGROK_DIR=%USERPROFILE%\.local\bin"
+    if not exist "%NGROK_DIR%" mkdir "%NGROK_DIR%" >nul 2>&1
+    set "ARCH=%PROCESSOR_ARCHITECTURE%"
+    set "NGROK_URL=https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-windows-amd64.zip"
+    if /I "%ARCH%"=="ARM64" set "NGROK_URL=https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-windows-arm64.zip"
+    powershell -ExecutionPolicy Bypass -Command ^
+        "$p='%NGROK_DIR%';" ^
+        "$u='%NGROK_URL%';" ^
+        "$z=Join-Path $env:TEMP 'ngrok.zip';" ^
+        "try { Invoke-WebRequest -Uri $u -OutFile $z -UseBasicParsing; Expand-Archive -Path $z -DestinationPath $p -Force } catch {}"
+    set "PATH=%NGROK_DIR%;%PATH%"
+)
+
 :: 检查 bun
 where bun >nul 2>&1
 if %errorlevel% neq 0 (

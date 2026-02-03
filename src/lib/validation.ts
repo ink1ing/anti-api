@@ -52,7 +52,7 @@ export function validateChatRequest(payload: any): ValidationResult {
         if (!msg.role || typeof msg.role !== "string") {
             return { valid: false, error: `Message at index ${i} must have a role` }
         }
-        const validRoles = ["system", "user", "assistant", "tool", "developer"]
+        const validRoles = ["system", "user", "assistant", "tool", "developer", "function"]
         if (!validRoles.includes(msg.role)) {
             return { valid: false, error: `Invalid role "${msg.role}" at index ${i}` }
         }

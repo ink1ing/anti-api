@@ -211,6 +211,8 @@ interface OpenAIResponse {
 // Extracts the response.completed event data matching CLIProxyAPI's approach
 function parseCodexSSEResponse(sseText: string): any {
     const lines = sseText.split("\n")
+    const textChunks: string[] = []
+    let lastResponse: any = null
     for (const line of lines) {
         if (!line.startsWith("data:")) continue
         const data = line.slice(5).trim()
@@ -220,9 +222,26 @@ function parseCodexSSEResponse(sseText: string): any {
             if (parsed.type === "response.completed") {
                 return parsed.response || parsed
             }
+            if (parsed.type === "response.created" && parsed.response) {
+                lastResponse = parsed.response
+            }
+            if (typeof parsed?.delta === "string" && String(parsed.type || "").includes("output_text")) {
+                textChunks.push(parsed.delta)
+            } else if (typeof parsed?.text === "string" && String(parsed.type || "").includes("output_text")) {
+                textChunks.push(parsed.text)
+            } else if (typeof parsed?.output_text === "string") {
+                textChunks.push(parsed.output_text)
+            }
         } catch {
             // Skip invalid JSON lines
         }
+    }
+    if (textChunks.length > 0) {
+        const output = [{
+            type: "message",
+            content: [{ type: "output_text", text: textChunks.join("") }]
+        }]
+        return lastResponse ? { ...lastResponse, output } : { output }
     }
     // If no response.completed found, try to find any output content
     for (const line of lines) {
@@ -237,6 +256,9 @@ function parseCodexSSEResponse(sseText: string): any {
         } catch {
             // Skip invalid JSON lines
         }
+    }
+    if (lastResponse) {
+        return { ...lastResponse, output: [] }
     }
     // Log the raw SSE for debugging
     consola.error("Codex SSE parse failed. Raw SSE (first 1000 chars):", sseText.slice(0, 1000))
@@ -676,8 +698,16 @@ export async function createCodexCompletion(
 
     const isEmpty2 = isEmptyCompletion(completion)
     if (isEmpty2) {
-        consola.error("Codex completion still empty after fallback. Structure:", JSON.stringify(completion).slice(0, 800))
-        throw new UpstreamError("codex", 500, "Empty completion")
+        consola.warn("Codex completion still empty after fallback. Returning empty response.", JSON.stringify(completion).slice(0, 400))
+        return {
+            contentBlocks: [{ type: "text" as const, text: "" }],
+            stopReason: "end_turn" as const,
+            usage: {
+                inputTokens: completion.usage?.prompt_tokens || 0,
+                outputTokens: completion.usage?.completion_tokens || 0,
+            },
+            resolvedModel,
+        }
     }
 
     const choice = completion.choices?.[0]

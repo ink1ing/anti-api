@@ -20,13 +20,38 @@ import { validateChatRequest } from "~/lib/validation"
 import { rateLimiter } from "~/lib/rate-limiter"
 import { forwardError, summarizeUpstreamError, UpstreamError } from "~/lib/error"
 
+function normalizeChatPayload(payload: OpenAIChatCompletionRequest): void {
+    if (payload.max_tokens !== undefined && (payload.max_tokens === null || payload.max_tokens <= 0)) {
+        delete (payload as { max_tokens?: number | null }).max_tokens
+    }
+    if (payload.temperature !== undefined && payload.temperature === null) {
+        delete (payload as { temperature?: number | null }).temperature
+    }
+    if (payload.stream !== undefined && payload.stream === null) {
+        delete (payload as { stream?: boolean | null }).stream
+    }
+    if (payload.tools !== undefined && payload.tools === null) {
+        delete (payload as { tools?: any[] | null }).tools
+    }
+}
+
+function buildValidationReason(message?: string): string {
+    const raw = (message || "invalid_request").replace(/[\r\n]+/g, " ").trim()
+    if (!raw) return "invalid_request"
+    return raw.length > 160 ? `${raw.slice(0, 157)}...` : raw
+}
+
 export async function handleChatCompletion(c: Context): Promise<Response> {
     try {
         const payload = await c.req.json<OpenAIChatCompletionRequest>()
+        if (payload && typeof payload === "object") {
+            normalizeChatPayload(payload)
+        }
 
         // Input validation
         const validation = validateChatRequest(payload)
         if (!validation.valid) {
+            c.header("X-Log-Reason", buildValidationReason(validation.error))
             return c.json({ error: { type: "invalid_request_error", message: validation.error } }, 400)
         }
 
@@ -50,6 +75,7 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
             })
         } catch (error) {
             if (error instanceof RoutingError) {
+                c.header("X-Log-Reason", buildValidationReason(error.message))
                 return c.json({ error: { type: "invalid_request_error", message: error.message } }, error.status)
             }
             throw error

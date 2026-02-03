@@ -19,6 +19,7 @@
             --node-glow: rgba(110, 231, 255, 0.35);
             --grid: rgba(255, 255, 255, 0.04);
             --grid-strong: rgba(255, 255, 255, 0.08);
+            --white-glow: #ffffff;
         }
 
         body {
@@ -182,12 +183,31 @@
             perspective: 1000px;
         }
 
+        .refresh-btn {
+            perspective: 1000px;
+        }
+
+        .refresh-btn button {
+            transform-style: preserve-3d;
+            transition: box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+            background: rgba(17, 17, 17, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(59, 42, 84, 0.3);
+        }
+
         .action-btn {
             transform-style: preserve-3d;
             transition: box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
             background: rgba(17, 17, 17, 0.9);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(59, 42, 84, 0.3);
+        }
+
+        #refresh-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--white-glow);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.4),
+                0 0 40px rgba(255, 255, 255, 0.2);
         }
 
         #back-btn:hover {
@@ -434,6 +454,12 @@
                     <button id="tab-account" onclick="setRoutingTab('account')"
                         class="action-btn px-3 py-2 rounded-lg font-bold text-gray-400">
                         Account Routing
+                    </button>
+                </div>
+                <div class="refresh-btn inline-block" id="refresh-container">
+                    <button onclick="refreshRouting(true)" id="refresh-btn"
+                        class="px-4 py-2 rounded-lg font-bold text-gray-300 text-sm">
+                        Refresh
                     </button>
                 </div>
                 <div class="action-wrap inline-block">
@@ -925,6 +951,31 @@
             bindCanvasEvents();
             renderAccountRouting();
             setRoutingTab(activeRoutingTab);
+        }
+
+        let routingRefreshing = false;
+        async function refreshRouting(showStatus = false) {
+            if (routingRefreshing) return;
+            routingRefreshing = true;
+            const status = dom.byId('save-status');
+            if (showStatus && status) {
+                status.textContent = 'Refreshing...';
+            }
+            try {
+                await loadRouting();
+                if (showStatus && status) {
+                    status.textContent = 'Refreshed';
+                }
+            } catch {
+                if (showStatus && status) {
+                    status.textContent = 'Refresh failed';
+                }
+            } finally {
+                if (showStatus && status) {
+                    setTimeout(() => status.textContent = '', 2000);
+                }
+                routingRefreshing = false;
+            }
         }
 
         function cloneEntries(entries) {
@@ -1460,6 +1511,7 @@
             newFlow,
             saveRouting,
             saveAccountRouting,
+            refreshRouting,
             addAccountRouteEntry,
             moveAccountRouteEntry,
             removeAccountRouteEntry,

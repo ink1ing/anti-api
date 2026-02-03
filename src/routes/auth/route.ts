@@ -9,8 +9,53 @@ import { state } from "~/lib/state"
 import { authStore } from "~/services/auth/store"
 import { debugCodexOAuth, importCodexAuthSources, startCodexCliLogin, getCodexCliLoginStatus } from "~/services/codex/oauth"
 import { startCopilotDeviceFlow, pollCopilotSession, importCopilotAuthFiles } from "~/services/copilot/oauth"
+import type { ProviderAccount } from "~/services/auth/types"
 
 export const authRouter = new Hono()
+
+type AuthExportBundle = {
+    version: number
+    exportedAt: string
+    accounts: ProviderAccount[]
+}
+
+function normalizeImportAccounts(payload: any): ProviderAccount[] {
+    if (Array.isArray(payload)) {
+        return payload as ProviderAccount[]
+    }
+    if (payload && typeof payload === "object") {
+        if (Array.isArray(payload.accounts)) {
+            return payload.accounts as ProviderAccount[]
+        }
+    }
+    return []
+}
+
+function isValidProvider(provider: unknown): provider is ProviderAccount["provider"] {
+    return provider === "antigravity" || provider === "codex" || provider === "copilot"
+}
+
+function sanitizeAccount(raw: ProviderAccount): ProviderAccount | null {
+    if (!raw || typeof raw !== "object") return null
+    if (!isValidProvider(raw.provider)) return null
+    if (!raw.id || typeof raw.id !== "string") return null
+    if (!raw.accessToken || typeof raw.accessToken !== "string") return null
+
+    return {
+        id: raw.id,
+        provider: raw.provider,
+        email: raw.email,
+        login: raw.login,
+        label: raw.label,
+        accessToken: raw.accessToken,
+        refreshToken: raw.refreshToken,
+        expiresAt: raw.expiresAt,
+        projectId: raw.projectId,
+        authSource: raw.authSource,
+        createdAt: raw.createdAt,
+        updatedAt: raw.updatedAt,
+    }
+}
 
 // 获取认证状态
 authRouter.get("/status", (c) => {
@@ -31,6 +76,80 @@ authRouter.get("/accounts", (c) => {
             copilot: authStore.listSummaries("copilot"),
         },
     })
+})
+
+// 导出账号（用于跨机器迁移）
+authRouter.get("/export", (c) => {
+    accountManager.load()
+    const accounts = [
+        ...authStore.listAccounts("antigravity"),
+        ...authStore.listAccounts("codex"),
+        ...authStore.listAccounts("copilot"),
+    ]
+    const bundle: AuthExportBundle = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        accounts,
+    }
+    return c.json(bundle)
+})
+
+// 导入账号（用于跨机器迁移）
+authRouter.post("/import", async (c) => {
+    accountManager.load()
+    const body = await c.req.json()
+    const mode = typeof body?.mode === "string" ? body.mode : "merge"
+    const incoming = normalizeImportAccounts(body)
+
+    if (!Array.isArray(incoming) || incoming.length === 0) {
+        return c.json({ success: false, error: "No accounts provided" }, 400)
+    }
+
+    const accounts = incoming
+        .map(sanitizeAccount)
+        .filter((account): account is ProviderAccount => !!account)
+
+    if (accounts.length === 0) {
+        return c.json({ success: false, error: "No valid accounts in payload" }, 400)
+    }
+
+    if (mode === "replace") {
+        const providers = new Set(accounts.map(account => account.provider))
+        if (providers.has("antigravity")) {
+            for (const acc of authStore.listAccounts("antigravity")) {
+                accountManager.removeAccount(acc.id)
+            }
+        }
+        if (providers.has("codex")) {
+            for (const acc of authStore.listAccounts("codex")) {
+                authStore.deleteAccount("codex", acc.id)
+            }
+        }
+        if (providers.has("copilot")) {
+            for (const acc of authStore.listAccounts("copilot")) {
+                authStore.deleteAccount("copilot", acc.id)
+            }
+        }
+    }
+
+    let imported = 0
+    for (const account of accounts) {
+        if (account.provider === "antigravity") {
+            accountManager.addAccount({
+                id: account.id,
+                email: account.email || account.login || account.id,
+                accessToken: account.accessToken,
+                refreshToken: account.refreshToken || "",
+                expiresAt: account.expiresAt || 0,
+                projectId: account.projectId || null,
+            })
+        } else {
+            authStore.saveAccount(account)
+        }
+        imported += 1
+    }
+
+    return c.json({ success: true, imported })
 })
 
 // 登录（触发 OAuth 或设置 token）

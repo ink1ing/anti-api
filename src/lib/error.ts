@@ -49,6 +49,7 @@ type ParsedUpstreamError = {
     reason?: string
     message?: string
     status?: string
+    type?: string
 }
 
 function parseUpstreamErrorBody(body: string): ParsedUpstreamError {
@@ -70,6 +71,7 @@ function parseUpstreamErrorBody(body: string): ParsedUpstreamError {
             }
             return {
                 reason,
+                type: typeof err?.type === "string" ? err.type : undefined,
                 message: typeof err?.message === "string" ? err.message : undefined,
                 status: typeof err?.status === "string" ? err.status : undefined,
             }
@@ -84,11 +86,17 @@ export function summarizeUpstream429(error: UpstreamError): { reason: Upstream42
     const providerName = error.provider === "antigravity" ? "Antigravity" : error.provider
     const parsed = parseUpstreamErrorBody(error.body || "")
     const rawReason = parsed.reason || ""
+    const rawType = parsed.type || ""
     const messageText = parsed.message || ""
     const lower = messageText.toLowerCase()
 
     let reason: Upstream429Reason = "unknown"
-    if (rawReason === "QUOTA_EXHAUSTED" || (lower.includes("quota") && lower.includes("reset"))) {
+    if (
+        rawReason === "QUOTA_EXHAUSTED" ||
+        rawType === "usage_limit_reached" ||
+        lower.includes("usage limit") ||
+        (lower.includes("quota") && lower.includes("reset"))
+    ) {
         reason = "quota_exhausted"
     } else if (rawReason === "MODEL_CAPACITY_EXHAUSTED" || lower.includes("no capacity") || lower.includes("capacity")) {
         reason = "model_capacity_exhausted"

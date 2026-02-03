@@ -292,7 +292,13 @@ function isQuotaExhausted(error: UpstreamError): boolean {
     if (body.startsWith("{") || body.startsWith("[")) {
         try {
             const json = JSON.parse(body)
-            const details = json?.error?.details
+            const err = json?.error || json
+            const errType = String(err?.type || "")
+            const errMessage = String(err?.message || "")
+            if (errType === "usage_limit_reached" || /usage limit/i.test(errMessage)) {
+                return true
+            }
+            const details = err?.details
             if (Array.isArray(details)) {
                 for (const detail of details) {
                     if (detail?.reason === "QUOTA_EXHAUSTED") return true
@@ -304,6 +310,7 @@ function isQuotaExhausted(error: UpstreamError): boolean {
     }
 
     const lower = body.toLowerCase()
+    if (lower.includes("usage_limit_reached") || lower.includes("usage limit")) return true
     if (lower.includes("quota_exhausted")) return true
     if (lower.includes("quota") && lower.includes("reset")) return true
     return false
@@ -354,6 +361,15 @@ function resolveFlowSelection(config: RoutingConfig, model: string): { flowKey: 
         throw new RoutingError(`No flow routing entries configured for model "${model}"`, 400)
     }
     return { flowKey, entries }
+}
+
+function resolveActiveFlowSelection(config: RoutingConfig): { flowKey: string; entries: RoutingEntry[] } | null {
+    if (!config.activeFlowId) return null
+    const flow = config.flows.find(candidate => candidate.id === config.activeFlowId)
+    if (!flow) return null
+    const entries = normalizeEntries(flow.entries)
+    if (entries.length === 0) return null
+    return { flowKey: flow.name || "active", entries }
 }
 
 function resolveAccountEntries(config: RoutingConfig, model: string): AccountRoutingEntry[] {
@@ -699,6 +715,10 @@ export async function createRoutedCompletion(request: RoutedRequest) {
         throw new RoutingError("Model is not available", 400)
     }
     const config = loadRoutingConfig()
+    const activeFlow = resolveActiveFlowSelection(config)
+    if (activeFlow) {
+        return createFlowCompletionWithEntries(request, activeFlow.entries, activeFlow.flowKey)
+    }
     if (isOfficialModel(request.model)) {
         const accountEntries = resolveAccountEntries(config, request.model)
         return createAccountCompletionWithEntries(request, accountEntries)
@@ -1046,6 +1066,11 @@ export async function* createRoutedCompletionStream(request: RoutedRequest): Asy
         throw new RoutingError("Model is not available", 400)
     }
     const config = loadRoutingConfig()
+    const activeFlow = resolveActiveFlowSelection(config)
+    if (activeFlow) {
+        yield* createFlowCompletionStreamWithEntries(request, activeFlow.entries, activeFlow.flowKey)
+        return
+    }
 
     if (isOfficialModel(normalizedModel)) {
         const accountEntries = resolveAccountEntries(config, normalizedModel)
