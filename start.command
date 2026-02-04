@@ -24,6 +24,106 @@ SETTINGS_FILE="$PID_DIR/settings.json"
 
 mkdir -p "$PID_DIR"
 
+UPDATE_MODE="false"
+UPDATE_ONLY="false"
+for arg in "$@"; do
+    case "$arg" in
+        --update|-u)
+            UPDATE_MODE="true"
+            ;;
+        --update-only)
+            UPDATE_MODE="true"
+            UPDATE_ONLY="true"
+            ;;
+    esac
+done
+
+do_update() {
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "[错误] 缺少 curl，无法自动更新"
+        return 1
+    fi
+    if ! command -v unzip >/dev/null 2>&1; then
+        echo "[错误] 缺少 unzip，无法自动更新"
+        return 1
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "[错误] 缺少 python3，无法自动更新"
+        return 1
+    fi
+
+    API_URL="https://api.github.com/repos/ink1ing/anti-api/releases/latest"
+    RELEASE_JSON="$(curl -fsSL "$API_URL")" || return 1
+
+    read -r ASSET_URL TAG_NAME <<EOF
+$(python3 - <<'PY'
+import json, sys
+data = json.load(sys.stdin)
+assets = data.get("assets") or []
+url = ""
+for asset in assets:
+    name = asset.get("name") or ""
+    if name.startswith("anti-api-v") and name.endswith(".zip"):
+        url = asset.get("browser_download_url") or ""
+        break
+tag = data.get("tag_name") or ""
+print(f"{url} {tag}".strip())
+PY
+<<<"$RELEASE_JSON")
+EOF
+
+    if [ -z "$ASSET_URL" ]; then
+        echo "[错误] 找不到 release 包"
+        return 1
+    fi
+
+    TMP_DIR="$(mktemp -d)"
+    ZIP_FILE="$TMP_DIR/release.zip"
+    if ! curl -fsSL "$ASSET_URL" -o "$ZIP_FILE"; then
+        echo "[错误] 下载更新失败"
+        rm -rf "$TMP_DIR"
+        return 1
+    fi
+
+    unzip -q "$ZIP_FILE" -d "$TMP_DIR" || { rm -rf "$TMP_DIR"; return 1; }
+    TOP_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name "anti-api-v*" | head -n 1)"
+    if [ -z "$TOP_DIR" ]; then
+        echo "[错误] 解压后的目录结构不符合预期"
+        rm -rf "$TMP_DIR"
+        return 1
+    fi
+
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a --delete \
+            --exclude ".git/" \
+            --exclude "data/" \
+            --exclude "node_modules/" \
+            --exclude ".env" \
+            "$TOP_DIR"/ "$PWD"/
+    else
+        cp -R "$TOP_DIR"/. "$PWD"/
+    fi
+
+    if [ -f "$TOP_DIR/anti-api-start.command" ]; then
+        cp "$TOP_DIR/anti-api-start.command" "$PWD/start.command"
+        chmod +x "$PWD/start.command" 2>/dev/null || true
+    fi
+    if [ -f "$TOP_DIR/anti-api-start.bat" ]; then
+        cp "$TOP_DIR/anti-api-start.bat" "$PWD/start.bat"
+    fi
+
+    rm -rf "$TMP_DIR"
+    echo "已更新到最新版本 ${TAG_NAME:-}"
+    return 0
+}
+
+if [ "$UPDATE_MODE" = "true" ]; then
+    do_update || exit 1
+    if [ "$UPDATE_ONLY" = "true" ]; then
+        exit 0
+    fi
+fi
+
 AUTO_RESTART="false"
 if [ -f "$SETTINGS_FILE" ] && command -v python3 >/dev/null 2>&1; then
     AUTO_RESTART=$(python3 - <<'PY'

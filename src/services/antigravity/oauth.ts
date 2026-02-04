@@ -5,6 +5,7 @@
 
 import https from "https"
 import { state } from "~/lib/state"
+import { getAntigravityUserAgent } from "~/lib/antigravity-client"
 
 // OAuth 配置（来自 CLIProxyAPI）
 export const OAUTH_CONFIG = {
@@ -24,7 +25,7 @@ export const OAUTH_CONFIG = {
     ],
 }
 
-const PROJECT_USER_AGENT = "antigravity/1.11.9 windows/amd64"
+const PROJECT_USER_AGENT = getAntigravityUserAgent()
 
 /**
  * 生成随机 state 用于 CSRF 保护

@@ -3,6 +3,23 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
+set UPDATE_MODE=0
+set UPDATE_ONLY=0
+:parse_args
+if "%~1"=="" goto after_args
+if /I "%~1"=="--update" set UPDATE_MODE=1
+if /I "%~1"=="-u" set UPDATE_MODE=1
+if /I "%~1"=="--update-only" (
+    set UPDATE_MODE=1
+    set UPDATE_ONLY=1
+)
+shift
+goto parse_args
+:after_args
+
+if %UPDATE_MODE%==1 call :do_update
+if %UPDATE_MODE%==1 if %UPDATE_ONLY%==1 goto :end
+
 echo.
 echo   █████╗ ███╗   ██╗████████╗██╗         █████╗ ██████╗ ██╗
 echo  ██╔══██╗████╗  ██║╚══██╔══╝██║        ██╔══██╗██╔══██╗██║
@@ -92,6 +109,32 @@ bun run src/main.ts start
 taskkill /IM anti-proxy.exe /F >nul 2>&1
 
 goto :end
+
+:do_update
+set "API_URL=https://api.github.com/repos/ink1ing/anti-api/releases/latest"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$r=Invoke-RestMethod -Uri '%API_URL%';" ^
+    "$asset=$r.assets | Where-Object { $_.name -match '^anti-api-v.*\\.zip$' } | Select-Object -First 1;" ^
+    "if(-not $asset){ exit 2 };" ^
+    "$url=$asset.browser_download_url;" ^
+    "$tmp=Join-Path $env:TEMP 'anti-api-update';" ^
+    "Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue;" ^
+    "New-Item -ItemType Directory -Path $tmp | Out-Null;" ^
+    "$zip=Join-Path $tmp 'release.zip';" ^
+    "Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing;" ^
+    "Expand-Archive -Path $zip -DestinationPath $tmp -Force;" ^
+    "$dir=Get-ChildItem $tmp -Directory | Where-Object { $_.Name -like 'anti-api-v*' } | Select-Object -First 1;" ^
+    "if(-not $dir){ exit 3 };" ^
+    "$src=$dir.FullName; $dst=(Get-Location).Path;" ^
+    "robocopy $src $dst /E /NFL /NDL /NJH /NJS /NP /XD data node_modules .git /XF .env >$null;" ^
+    "if(Test-Path (Join-Path $src 'anti-api-start.command')){ Copy-Item (Join-Path $src 'anti-api-start.command') (Join-Path $dst 'start.command') -Force };" ^
+    "if(Test-Path (Join-Path $src 'anti-api-start.bat')){ Copy-Item (Join-Path $src 'anti-api-start.bat') (Join-Path $dst 'start.bat') -Force }"
+if %errorlevel% geq 8 (
+    echo [错误] 自动更新失败
+    exit /b 1
+)
+echo 已更新到最新版本
+exit /b 0
 
 :error
 echo.

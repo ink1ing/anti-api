@@ -1,9 +1,10 @@
 import { fetchInsecureJson, getProjectID } from "./oauth"
 import { generateMockProjectId } from "./project-id"
 import { UpstreamError } from "~/lib/error"
+import { getAntigravityUserAgent } from "~/lib/antigravity-client"
 
 const CLOUD_CODE_BASE_URL = "https://cloudcode-pa.googleapis.com"
-const USER_AGENT = "antigravity/1.11.3 windows/amd64"
+const USER_AGENT = getAntigravityUserAgent()
 
 export type AntigravityModelInfo = {
     remainingFraction?: number

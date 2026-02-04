@@ -1,4 +1,4 @@
-const DEFAULT_ANTIGRAVITY_IDE_VERSION = "1.13.3b"
+const DEFAULT_ANTIGRAVITY_IDE_VERSION = "1.15.8"
 
 export function getAntigravityIdeVersion(): string {
     return process.env.ANTIGRAVITY_IDE_VERSION?.trim() || DEFAULT_ANTIGRAVITY_IDE_VERSION
