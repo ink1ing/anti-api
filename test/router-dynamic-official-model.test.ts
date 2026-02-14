@@ -1,0 +1,62 @@
+import { afterEach, expect, mock, test } from "bun:test"
+import { clearDynamicCopilotModels, setDynamicCopilotModels } from "~/services/routing/models"
+
+mock.module("~/services/routing/config", () => ({
+    loadRoutingConfig: () => ({
+        version: 2,
+        updatedAt: new Date().toISOString(),
+        flows: [],
+        accountRouting: { smartSwitch: false, routes: [] },
+    }),
+}))
+
+mock.module("~/services/antigravity/chat", () => ({
+    createChatCompletionWithOptions: async () => ({ contentBlocks: [], stopReason: "end_turn", usage: {} }),
+    createChatCompletionStreamWithOptions: async function* () {
+        yield ""
+    },
+}))
+
+mock.module("~/services/antigravity/account-manager", () => ({
+    accountManager: {
+        hasAccount: () => true,
+        isAccountRateLimited: () => false,
+        isAccountInFlight: () => false,
+        markRateLimitedFromError: () => ({ reason: "rate_limited", durationMs: 1_000 }),
+    },
+}))
+
+mock.module("~/services/codex/chat", () => ({
+    createCodexCompletion: async () => ({ contentBlocks: [], stopReason: "end_turn", usage: {} }),
+}))
+
+mock.module("~/services/copilot/chat", () => ({
+    createCopilotCompletion: async () => ({ contentBlocks: [], stopReason: "end_turn", usage: {} }),
+}))
+
+mock.module("~/services/auth/store", () => ({
+    authStore: {
+        getAccount: () => null,
+        isRateLimited: () => false,
+        markRateLimited: () => 1_000,
+        markSuccess: () => { },
+        listAccounts: () => [],
+    },
+}))
+
+afterEach(() => {
+    clearDynamicCopilotModels()
+})
+
+test("dynamic copilot model is treated as official model by router", async () => {
+    setDynamicCopilotModels([{ id: "gpt-5.2-new", label: "Copilot - GPT-5.2 New" }])
+
+    const router = await import(`../src/services/routing/router.ts?${Date.now()}-${Math.random()}`)
+
+    await expect(
+        router.createRoutedCompletion({
+            model: "gpt-5.2-new",
+            messages: [],
+        })
+    ).rejects.toThrow('No account routing configured for model "gpt-5.2-new"')
+})

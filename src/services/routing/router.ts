@@ -70,7 +70,6 @@ function isEntryUsable(entry: RoutingEntry): boolean {
 // 🆕 Router 级别的 rate-limit 状态（独立于 accountManager）
 const routerRateLimits = new Map<string, number>()  // "provider:accountId" -> expiry timestamp
 const PROVIDER_ORDER: AuthProvider[] = ["antigravity", "codex", "copilot"]
-let officialModelIndex: Map<string, Set<AuthProvider>> | null = null
 const flowStickyStates = new Map<string, FlowStickyState>()
 const accountStickyStates = new Map<string, AccountStickyState>()
 
@@ -142,9 +141,7 @@ function buildOfficialModelIndex(): Map<string, Set<AuthProvider>> {
 }
 
 function getOfficialModelProviders(model: string): AuthProvider[] {
-    if (!officialModelIndex) {
-        officialModelIndex = buildOfficialModelIndex()
-    }
+    const officialModelIndex = buildOfficialModelIndex()
     return Array.from(officialModelIndex.get(model) || [])
 }
 
@@ -259,6 +256,8 @@ function getAccountDisplay(provider: AuthProvider, accountId: string): string {
 
 const FALLBACK_STATUSES = new Set([401, 403, 408, 429, 500, 503, 529])
 const FLOW_PROBE_INTERVAL_MS = 30_000
+const DEFAULT_ROUTER_COOLDOWN_MS = 60_000
+const ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS = 20_000
 
 function isAccountUnavailableError(error: unknown): boolean {
     if (error instanceof UpstreamError) {
@@ -277,10 +276,14 @@ function isTransientTransportError(error: unknown): boolean {
     return /certificate|fetch failed|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed out/i.test(error.message)
 }
 
-function shouldFallbackOnUpstream(error: UpstreamError): boolean {
+function shouldFallbackOnUpstream(entry: RoutingEntry | AccountRoutingEntry, error: UpstreamError): boolean {
     if ((error as any).streamingStarted) return false
     if (error.status === 429) {
         return isQuotaExhausted(error) || (error as any).retryable === true
+    }
+    // Antigravity may return 404 for model-account mismatch; fallback to the next account.
+    if (entry.provider === "antigravity" && error.status === 404) {
+        return true
     }
     return FALLBACK_STATUSES.has(error.status)
 }
@@ -289,6 +292,8 @@ function shouldAdvanceCursorOnError(entry: RoutingEntry | AccountRoutingEntry, e
     if (entry.provider !== "antigravity") return true
     if (isAccountUnavailableError(error)) return true
     if (error.status === 401 || error.status === 403) return true
+    if (error.status === 404) return true
+    if (error.status >= 500) return true
     if (error.status === 429 && isQuotaExhausted(error)) return true
     return false
 }
@@ -411,21 +416,22 @@ function shouldSkipFlowEntry(
 
 function applyFlowRateLimit(entry: RoutingEntry, error: UpstreamError, requestModel: string): void {
     if (entry.provider === "antigravity" && entry.accountId !== "auto") {
+        const cooldownMs = error.status >= 500 ? ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS : 30_000
         accountManager
-            .markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, requestModel, { maxDurationMs: 30_000 })
+            .markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, requestModel, { maxDurationMs: cooldownMs })
             .then((limit) => {
-                const duration = limit?.durationMs ?? 30_000
+                const duration = limit?.durationMs ?? cooldownMs
                 markRouterRateLimited("antigravity", entry.accountId, duration)
             })
             .catch(() => {
-                markRouterRateLimited("antigravity", entry.accountId, 30_000)
+                markRouterRateLimited("antigravity", entry.accountId, cooldownMs)
             })
         return
     }
 
     if (entry.provider !== "antigravity") {
         authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-        markRouterRateLimited(entry.provider, entry.accountId, 60000)
+        markRouterRateLimited(entry.provider, entry.accountId, DEFAULT_ROUTER_COOLDOWN_MS)
     }
 }
 
@@ -522,7 +528,7 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
             if (entry.provider === "antigravity" && isAccountUnavailableError(error)) {
                 continue
             }
-            if (error instanceof UpstreamError && shouldFallbackOnUpstream(error)) {
+            if (error instanceof UpstreamError && shouldFallbackOnUpstream(entry, error)) {
                 const shouldAdvance = shouldAdvanceCursorOnError(entry, error)
                 if (shouldAdvance) {
                     applyFlowRateLimit(entry, error, request.model)
@@ -550,7 +556,7 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
                                 return probeResult
                             } catch (probeError) {
                                 lastError = probeError as Error
-                                if (probeError instanceof UpstreamError && shouldFallbackOnUpstream(probeError)) {
+                                if (probeError instanceof UpstreamError && shouldFallbackOnUpstream(probeEntry, probeError)) {
                                     const shouldAdvanceProbe = shouldAdvanceCursorOnError(probeEntry, probeError)
                                     if (shouldAdvanceProbe) {
                                         applyFlowRateLimit(probeEntry, probeError, request.model)
@@ -696,15 +702,23 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 advanceAccountCursor(accountState, entries.length, index)
                 continue
             }
-            if (error instanceof UpstreamError && shouldFallbackOnUpstream(error)) {
+            if (error instanceof UpstreamError && shouldFallbackOnUpstream(entry, error)) {
                 const shouldAdvance = shouldAdvanceCursorOnError(entry, error)
                 if (shouldAdvance) {
                     if (entry.provider === "antigravity") {
-                        accountManager.markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, request.model)
-                        markRouterRateLimited("antigravity", entry.accountId, 60000)
+                        const cooldownMs = error.status >= 500 ? ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS : DEFAULT_ROUTER_COOLDOWN_MS
+                        accountManager.markRateLimitedFromError(
+                            entry.accountId,
+                            error.status,
+                            error.body,
+                            error.retryAfter,
+                            request.model,
+                            { maxDurationMs: cooldownMs }
+                        )
+                        markRouterRateLimited("antigravity", entry.accountId, cooldownMs)
                     } else {
                         authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-                        markRouterRateLimited(entry.provider, entry.accountId, 60000)
+                        markRouterRateLimited(entry.provider, entry.accountId, DEFAULT_ROUTER_COOLDOWN_MS)
                     }
                     advanceAccountCursor(accountState, entries.length, index)
                 }
@@ -832,7 +846,7 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
             if (entry.provider === "antigravity" && isAccountUnavailableError(error)) {
                 continue
             }
-            if (error instanceof UpstreamError && shouldFallbackOnUpstream(error)) {
+            if (error instanceof UpstreamError && shouldFallbackOnUpstream(entry, error)) {
                 const shouldAdvance = shouldAdvanceCursorOnError(entry, error)
                 if (shouldAdvance) {
                     applyFlowRateLimit(entry, error, request.model)
@@ -860,7 +874,7 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
                                 return
                             } catch (probeError) {
                                 lastError = probeError as Error
-                                if (probeError instanceof UpstreamError && shouldFallbackOnUpstream(probeError)) {
+                                if (probeError instanceof UpstreamError && shouldFallbackOnUpstream(probeEntry, probeError)) {
                                     const shouldAdvanceProbe = shouldAdvanceCursorOnError(probeEntry, probeError)
                                     if (shouldAdvanceProbe) {
                                         applyFlowRateLimit(probeEntry, probeError, request.model)
@@ -1055,15 +1069,23 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 advanceAccountCursor(accountState, entries.length, index)
                 continue
             }
-            if (error instanceof UpstreamError && shouldFallbackOnUpstream(error)) {
+            if (error instanceof UpstreamError && shouldFallbackOnUpstream(entry, error)) {
                 const shouldAdvance = shouldAdvanceCursorOnError(entry, error)
                 if (shouldAdvance) {
                     if (entry.provider === "antigravity") {
-                        accountManager.markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, request.model)
-                        markRouterRateLimited("antigravity", entry.accountId, 60000)
+                        const cooldownMs = error.status >= 500 ? ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS : DEFAULT_ROUTER_COOLDOWN_MS
+                        accountManager.markRateLimitedFromError(
+                            entry.accountId,
+                            error.status,
+                            error.body,
+                            error.retryAfter,
+                            request.model,
+                            { maxDurationMs: cooldownMs }
+                        )
+                        markRouterRateLimited("antigravity", entry.accountId, cooldownMs)
                     } else {
                         authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
-                        markRouterRateLimited(entry.provider, entry.accountId, 60000)
+                        markRouterRateLimited(entry.provider, entry.accountId, DEFAULT_ROUTER_COOLDOWN_MS)
                     }
                     advanceAccountCursor(accountState, entries.length, index)
                 }

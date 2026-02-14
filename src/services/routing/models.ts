@@ -31,6 +31,53 @@ const CODEX_MODELS: ProviderModelOption[] = [
     { id: "gpt-5-codex-mini", label: "Codex - 5 Codex Mini" },
 ]
 
+const COPILOT_STATIC_MODELS: ProviderModelOption[] = [
+    { id: "claude-opus-4-5-thinking", label: "Copilot - Opus 4.5 Thinking" },
+    { id: "claude-sonnet-4-5", label: "Copilot - Sonnet 4.5" },
+    { id: "claude-sonnet-4-5-thinking", label: "Copilot - Sonnet 4.5 Thinking" },
+    { id: "gpt-4o", label: "Copilot - GPT-4o" },
+    { id: "gpt-4o-mini", label: "Copilot - GPT-4o Mini" },
+    { id: "gpt-4.1", label: "Copilot - GPT-4.1" },
+    { id: "gpt-4.1-mini", label: "Copilot - GPT-4.1 Mini" },
+]
+
+let dynamicCopilotModels: ProviderModelOption[] = []
+
+function sanitizeModelOptions(models: ProviderModelOption[]): ProviderModelOption[] {
+    const deduped = new Map<string, ProviderModelOption>()
+
+    for (const model of models) {
+        const id = model?.id?.trim()
+        if (!id) continue
+        if (deduped.has(id)) continue
+
+        const label = model?.label?.trim() || `Copilot - ${id}`
+        deduped.set(id, { id, label })
+    }
+
+    return Array.from(deduped.values())
+}
+
+function mergeModelOptions(...groups: ProviderModelOption[][]): ProviderModelOption[] {
+    const merged = new Map<string, ProviderModelOption>()
+    for (const group of groups) {
+        for (const model of group) {
+            if (!merged.has(model.id)) {
+                merged.set(model.id, model)
+            }
+        }
+    }
+    return Array.from(merged.values())
+}
+
+export function setDynamicCopilotModels(models: ProviderModelOption[]): void {
+    dynamicCopilotModels = sanitizeModelOptions(models)
+}
+
+export function clearDynamicCopilotModels(): void {
+    dynamicCopilotModels = []
+}
+
 export function getProviderModels(provider: AuthProvider): ProviderModelOption[] {
     if (provider === "antigravity") {
         return AVAILABLE_MODELS.map(model => ({
@@ -40,15 +87,7 @@ export function getProviderModels(provider: AuthProvider): ProviderModelOption[]
     }
 
     if (provider === "copilot") {
-        return [
-            { id: "claude-opus-4-5-thinking", label: "Copilot - Opus 4.5 Thinking" },
-            { id: "claude-sonnet-4-5", label: "Copilot - Sonnet 4.5" },
-            { id: "claude-sonnet-4-5-thinking", label: "Copilot - Sonnet 4.5 Thinking" },
-            { id: "gpt-4o", label: "Copilot - GPT-4o" },
-            { id: "gpt-4o-mini", label: "Copilot - GPT-4o Mini" },
-            { id: "gpt-4.1", label: "Copilot - GPT-4.1" },
-            { id: "gpt-4.1-mini", label: "Copilot - GPT-4.1 Mini" },
-        ]
+        return mergeModelOptions(dynamicCopilotModels, COPILOT_STATIC_MODELS)
     }
 
     if (provider === "codex") {

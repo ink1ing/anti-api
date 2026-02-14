@@ -4,7 +4,7 @@
 
 import { Hono } from "hono"
 import { cors } from "hono/cors"
-import { existsSync, readFileSync, writeFileSync } from "fs"
+import { readFileSync } from "fs"
 import { join } from "path"
 import consola from "consola"
 
@@ -24,12 +24,10 @@ import { loadSettings, saveSettings } from "./services/settings"
 import { pingAccount } from "./services/ping"
 import { summarizeUpstreamError, UpstreamError } from "./lib/error"
 import { authStore } from "./services/auth/store"
-import { ensureDataDir, getDataDir } from "./lib/data-dir"
 
 import { formatLogTime, getRequestLogContext } from "./lib/logger"
 import { initLogCapture, setLogCaptureEnabled } from "./lib/log-buffer"
-import { getUsage, loadUsage, resetUsage } from "./services/usage-tracker"
-import type { ProviderAccount } from "./services/auth/types"
+import { getUsage, resetUsage } from "./services/usage-tracker"
 
 export const server = new Hono()
 
@@ -130,144 +128,13 @@ server.post("/settings", async (c) => {
     return c.json(updated)
 })
 
-type ConfigBundle = {
-    version: number
-    exportedAt: string
-    accounts: ProviderAccount[]
-    settings?: ReturnType<typeof loadSettings>
-    routing?: ReturnType<typeof loadRoutingConfig>
-    authState?: any
-    oauthState?: any
-    remoteConfig?: any
-    legacyAccounts?: any
-    usage?: any
-    quotaCache?: any
-}
-
-function readJsonIfExists(path: string): any | null {
-    if (!existsSync(path)) return null
-    try {
-        return JSON.parse(readFileSync(path, "utf-8"))
-    } catch {
-        return null
-    }
-}
-
-function writeJson(path: string, data: any): void {
-    ensureDataDir()
-    writeFileSync(path, JSON.stringify(data, null, 2))
-}
-
-// Bundle export/import (accounts + usage + settings + quota cache)
+// Credential bundle export/import has been removed.
 server.get("/bundle/export", (c) => {
-    accountManager.load()
-    const accounts = [
-        ...authStore.listAccounts("antigravity"),
-        ...authStore.listAccounts("codex"),
-        ...authStore.listAccounts("copilot"),
-    ]
-    const dataDir = getDataDir()
-    const bundle: ConfigBundle = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        accounts,
-        settings: loadSettings(),
-        routing: loadRoutingConfig(),
-        authState: readJsonIfExists(join(dataDir, "auth.json")) || undefined,
-        oauthState: readJsonIfExists(join(dataDir, "oauth_state.json")) || undefined,
-        remoteConfig: readJsonIfExists(join(dataDir, "remote-config.json")) || undefined,
-        legacyAccounts: readJsonIfExists(join(dataDir, "accounts.json")) || undefined,
-        usage: readJsonIfExists(join(dataDir, "usage.json")) || undefined,
-        quotaCache: readJsonIfExists(join(dataDir, "quota-cache.json")) || undefined,
-    }
-    return c.json(bundle)
+    return c.json({ success: false, error: "Credential bundle export/import has been removed." }, 410)
 })
 
-server.post("/bundle/import", async (c) => {
-    accountManager.load()
-    const body = await c.req.json()
-    const mode = typeof body?.mode === "string" ? body.mode : "replace"
-    const accounts = Array.isArray(body?.accounts) ? body.accounts : []
-
-    if (accounts.length === 0) {
-        return c.json({ success: false, error: "No accounts provided" }, 400)
-    }
-
-    if (mode === "replace") {
-        for (const acc of authStore.listAccounts("antigravity")) {
-            accountManager.removeAccount(acc.id)
-        }
-        for (const acc of authStore.listAccounts("codex")) {
-            authStore.deleteAccount("codex", acc.id)
-        }
-        for (const acc of authStore.listAccounts("copilot")) {
-            authStore.deleteAccount("copilot", acc.id)
-        }
-    }
-
-    let imported = 0
-    for (const raw of accounts as ProviderAccount[]) {
-        if (!raw || typeof raw !== "object") continue
-        if (!raw.provider || !raw.id || !raw.accessToken) continue
-        if (raw.provider !== "antigravity" && raw.provider !== "codex" && raw.provider !== "copilot") continue
-        if (raw.provider === "antigravity") {
-            accountManager.addAccount({
-                id: raw.id,
-                email: raw.email || raw.login || raw.id,
-                accessToken: raw.accessToken,
-                refreshToken: raw.refreshToken || "",
-                expiresAt: raw.expiresAt || 0,
-                projectId: raw.projectId || null,
-            })
-        } else {
-            authStore.saveAccount({
-                id: raw.id,
-                provider: raw.provider,
-                email: raw.email,
-                login: raw.login,
-                label: raw.label,
-                accessToken: raw.accessToken,
-                refreshToken: raw.refreshToken,
-                expiresAt: raw.expiresAt,
-                projectId: raw.projectId,
-                authSource: raw.authSource,
-                createdAt: raw.createdAt,
-                updatedAt: raw.updatedAt,
-            })
-        }
-        imported += 1
-    }
-
-    if (body?.settings && typeof body.settings === "object") {
-        const updated = saveSettings(body.settings)
-        setLogCaptureEnabled(updated.captureLogs)
-    }
-
-    const dataDir = getDataDir()
-    if (body?.usage && typeof body.usage === "object") {
-        writeJson(join(dataDir, "usage.json"), body.usage)
-        loadUsage()
-    }
-    if (body?.quotaCache && typeof body.quotaCache === "object") {
-        writeJson(join(dataDir, "quota-cache.json"), body.quotaCache)
-    }
-    if (body?.routing && typeof body.routing === "object") {
-        writeJson(join(dataDir, "routing.json"), body.routing)
-    }
-    if (body?.authState && typeof body.authState === "object") {
-        writeJson(join(dataDir, "auth.json"), body.authState)
-    }
-    if (body?.oauthState && typeof body.oauthState === "object") {
-        writeJson(join(dataDir, "oauth_state.json"), body.oauthState)
-    }
-    if (body?.remoteConfig && typeof body.remoteConfig === "object") {
-        writeJson(join(dataDir, "remote-config.json"), body.remoteConfig)
-    }
-    if (body?.legacyAccounts && typeof body.legacyAccounts === "object") {
-        writeJson(join(dataDir, "accounts.json"), body.legacyAccounts)
-    }
-
-    return c.json({ success: true, imported })
+server.post("/bundle/import", (c) => {
+    return c.json({ success: false, error: "Credential bundle export/import has been removed." }, 410)
 })
 
 server.get("/usage", (c) => {

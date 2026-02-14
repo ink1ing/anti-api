@@ -18,7 +18,7 @@ interface CopilotTokenResponse {
     expires_at?: number
 }
 
-interface CopilotModelInfo {
+export interface CopilotModelInfo {
     id: string
     name?: string
     model_picker_enabled?: boolean
@@ -27,6 +27,24 @@ interface CopilotModelInfo {
 
 const tokenCache = new Map<string, { token: string; expiresAt: number }>()
 const modelsCache = new Map<string, { models: CopilotModelInfo[]; expiresAt: number }>()
+
+function normalizeCopilotModels(models: CopilotModelInfo[]): CopilotModelInfo[] {
+    const deduped = new Map<string, CopilotModelInfo>()
+
+    for (const model of models) {
+        const id = model?.id?.trim()
+        if (!id) continue
+        if (model.model_picker_enabled === false) continue
+        if (deduped.has(id)) continue
+
+        deduped.set(id, {
+            ...model,
+            id,
+        })
+    }
+
+    return Array.from(deduped.values())
+}
 
 // Map internal model names to Copilot API compatible names
 // Based on GitHub Copilot Pro supported models:
@@ -145,6 +163,11 @@ export async function createCopilotCompletion(
     }
 }
 
+export async function listCopilotModelsForAccount(account: ProviderAccount): Promise<CopilotModelInfo[]> {
+    const apiToken = await getCopilotApiToken(account)
+    return fetchCopilotModels(apiToken)
+}
+
 async function getCopilotApiToken(account: ProviderAccount): Promise<string> {
     const cached = tokenCache.get(account.id)
     if (cached && cached.expiresAt > Date.now()) {
@@ -211,7 +234,7 @@ async function fetchCopilotModels(apiToken: string): Promise<CopilotModelInfo[]>
         }
 
         const data = response.data as { data: CopilotModelInfo[] }
-        const models = data?.data || []
+        const models = normalizeCopilotModels(data?.data || [])
 
         modelsCache.set(apiToken, { models, expiresAt: Date.now() + 5 * 60 * 1000 })
         return models

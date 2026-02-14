@@ -19,19 +19,15 @@
 
 > **Disclaimer**: This project is based on reverse engineering of Antigravity. Future compatibility is not guaranteed. For long-term use, avoid updating Antigravity.
 
-## What's New (v2.6.0)
+## What's New (v2.6.1)
 
-- **Antigravity model update** - Added `claude-opus-4-6-thinking` to model list, routing, and quota grouping
-- **Codex model update** - Added Codex 5.3 series (`gpt-5.3`, `gpt-5.3-codex`) in the Codex routing model list
-- **Updater hardening** - Fixed macOS JSON parsing in update flow, improved Windows failure handling, and added release SHA256 verification
-- **Safer update behavior** - Update runs after local process stop and no longer uses destructive `--delete` file sync
+- **Credential transfer removed** - Login credential JSON export/import has been removed to reduce sensitive account exposure risk
+- **Core OAuth flows remain stable** - OAuth login remains fully supported for Antigravity, ChatGPT Codex, and GitHub Copilot
 
-## 更新说明 (v2.6.0)
+## 更新说明 (v2.6.1)
 
-- **Antigravity 模型更新** - 新增 `claude-opus-4-6-thinking`，并同步到模型列表、路由与配额分组
-- **Codex 模型更新** - 在 Codex 路由模型列表新增 5.3 系列（`gpt-5.3`、`gpt-5.3-codex`）
-- **更新流程加固** - 修复 macOS 更新 JSON 解析问题，增强 Windows 失败处理，并增加 release SHA256 校验
-- **更新行为更安全** - 先停本地进程再更新，且不再使用带删除风险的 `--delete` 同步
+- **凭证传输功能下线** - 已移除登录凭据 JSON 导入导出，降低账号敏感信息暴露风险
+- **核心 OAuth 流程保持稳定** - 继续稳定支持 Antigravity、ChatGPT Codex、GitHub Copilot 三方登录
 
 ## Features
 
@@ -331,7 +327,7 @@ MIT
 
 ## 更新内容 (v2.5.1)
 
-- **账号打包导入导出** - 设置页支持一键备份与恢复（账号、路由、偏好、用量、缓存）
+- **凭证导入导出下线说明** - 账号 JSON 凭证导入导出已在后续版本移除，不再提供该功能
 - **路由继承** - 支持直接使用当前 active flow
 - **路由刷新** - routing 页面新增刷新按钮
 - **配额稳定性** - `usage_limit_reached` 统一视为额度耗尽，触发自动切换

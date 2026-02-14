@@ -1,13 +1,15 @@
 import { Hono } from "hono"
+import consola from "consola"
 import { authStore } from "~/services/auth/store"
-import { getProviderModels } from "~/services/routing/models"
+import { listCopilotModelsForAccount } from "~/services/copilot/chat"
+import { getProviderModels, setDynamicCopilotModels } from "~/services/routing/models"
 import { loadRoutingConfig, saveRoutingConfig, setActiveFlow, type RoutingEntry, type RoutingFlow, type AccountRoutingConfig } from "~/services/routing/config"
 import { accountManager } from "~/services/antigravity/account-manager"
 import { getAggregatedQuota } from "~/services/quota-aggregator"
 import { readFileSync } from "fs"
 import { join } from "path"
 import { randomUUID } from "crypto"
-import type { ProviderAccountSummary } from "~/services/auth/types"
+import type { ProviderAccount, ProviderAccountSummary } from "~/services/auth/types"
 
 export const routingRouter = new Hono()
 
@@ -41,6 +43,32 @@ function syncAccountRoutingLabels(accountRouting?: AccountRoutingConfig): Accoun
     }
 }
 
+function listAccountsInOrder(provider: "antigravity" | "codex" | "copilot"): ProviderAccount[] {
+    const accounts = authStore.listAccounts(provider)
+    return accounts.sort((a, b) => {
+        const aTime = a.createdAt || ""
+        const bTime = b.createdAt || ""
+        if (aTime && bTime) {
+            return aTime.localeCompare(bTime)
+        }
+        if (aTime) return -1
+        if (bTime) return 1
+        return 0
+    })
+}
+
+function toSummary(account: ProviderAccount): ProviderAccountSummary {
+    return {
+        id: account.id,
+        provider: account.provider,
+        displayName: account.label || account.email || account.login || account.id,
+        email: account.email,
+        login: account.login,
+        label: account.label,
+        expiresAt: account.expiresAt,
+    }
+}
+
 routingRouter.get("/", (c) => {
     try {
         const htmlPath = join(import.meta.dir, "../../../public/routing.html")
@@ -60,33 +88,34 @@ routingRouter.get("/config", async (c) => {
         accountRouting: syncAccountRoutingLabels(config.accountRouting),
     }
 
-    const listSummariesInOrder = (provider: "antigravity" | "codex" | "copilot"): ProviderAccountSummary[] => {
-        const accounts = authStore.listAccounts(provider)
-        const sorted = accounts.sort((a, b) => {
-            const aTime = a.createdAt || ""
-            const bTime = b.createdAt || ""
-            if (aTime && bTime) {
-                return aTime.localeCompare(bTime)
+    const antigravityAccounts = listAccountsInOrder("antigravity")
+    const codexAccounts = listAccountsInOrder("codex")
+    const copilotAccounts = listAccountsInOrder("copilot")
+
+    const primaryCopilotAccount = copilotAccounts.find(account => !!account.accessToken)
+    if (primaryCopilotAccount) {
+        try {
+            const remoteModels = await listCopilotModelsForAccount(primaryCopilotAccount)
+            if (remoteModels.length > 0) {
+                const dynamicModels = remoteModels.map(model => ({
+                    id: model.id,
+                    label: `Copilot - ${model.name?.trim() || model.id}`,
+                }))
+                setDynamicCopilotModels(dynamicModels)
+                consola.debug(`[routing] Copilot models synced (${dynamicModels.length}) from ${primaryCopilotAccount.id}`)
+            } else {
+                consola.debug("[routing] Copilot models sync returned empty list; using fallback")
             }
-            if (aTime) return -1
-            if (bTime) return 1
-            return 0
-        })
-        return sorted.map(acc => ({
-            id: acc.id,
-            provider: acc.provider,
-            displayName: acc.label || acc.email || acc.login || acc.id,
-            email: acc.email,
-            login: acc.login,
-            label: acc.label,
-            expiresAt: acc.expiresAt,
-        }))
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            consola.warn(`[routing] Copilot models sync failed: ${message}`)
+        }
     }
 
     const accounts = {
-        antigravity: listSummariesInOrder("antigravity"),
-        codex: listSummariesInOrder("codex"),
-        copilot: listSummariesInOrder("copilot"),
+        antigravity: antigravityAccounts.map(toSummary),
+        codex: codexAccounts.map(toSummary),
+        copilot: copilotAccounts.map(toSummary),
     }
 
     const models = {
