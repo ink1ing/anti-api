@@ -28,6 +28,11 @@ type RateLimitState = {
 }
 
 const rateLimitState = new Map<string, RateLimitState>()
+const AUTH_CACHE_TTL_MS = 1000
+
+let cachedAccounts: ProviderAccount[] | null = null
+let cacheLoadedAt = 0
+let cacheDirty = true
 
 function ensureAuthDir(): void {
     if (!existsSync(AUTH_DIR)) {
@@ -125,18 +130,44 @@ function writeAccountFile(account: ProviderAccount): void {
     writeFileSync(path, JSON.stringify(payload, null, 2))
 }
 
+function loadAccountsFromDisk(): ProviderAccount[] {
+    ensureAuthDir()
+    const files = readdirSync(AUTH_DIR).filter(f => f.endsWith(".json"))
+    const accounts: ProviderAccount[] = []
+    for (const file of files) {
+        const account = loadAccountFromFile(join(AUTH_DIR, file))
+        if (!account) continue
+        accounts.push(account)
+    }
+    return accounts
+}
+
+function ensureAccountCache(force = false): ProviderAccount[] {
+    const expired = Date.now() - cacheLoadedAt > AUTH_CACHE_TTL_MS
+    if (!force && cachedAccounts && !cacheDirty && !expired) {
+        return cachedAccounts
+    }
+    cachedAccounts = loadAccountsFromDisk()
+    cacheLoadedAt = Date.now()
+    cacheDirty = false
+    return cachedAccounts
+}
+
+function invalidateAccountCache(): void {
+    cacheDirty = true
+}
+
+function cloneAccount(account: ProviderAccount): ProviderAccount {
+    return { ...account }
+}
+
 export const authStore = {
     listAccounts(provider?: AuthProvider): ProviderAccount[] {
-        ensureAuthDir()
-        const files = readdirSync(AUTH_DIR).filter(f => f.endsWith(".json"))
-        const accounts: ProviderAccount[] = []
-        for (const file of files) {
-            const account = loadAccountFromFile(join(AUTH_DIR, file))
-            if (!account) continue
-            if (provider && account.provider !== provider) continue
-            accounts.push(account)
-        }
-        return accounts
+        const accounts = ensureAccountCache()
+        const filtered = provider
+            ? accounts.filter(account => account.provider === provider)
+            : accounts
+        return filtered.map(cloneAccount)
     },
 
     listSummaries(provider?: AuthProvider): ProviderAccountSummary[] {
@@ -144,12 +175,14 @@ export const authStore = {
     },
 
     getAccount(provider: AuthProvider, id: string): ProviderAccount | null {
-        const accounts = this.listAccounts(provider)
-        return accounts.find(acc => acc.id === id) || null
+        const accounts = ensureAccountCache()
+        const account = accounts.find(acc => acc.provider === provider && acc.id === id)
+        return account ? cloneAccount(account) : null
     },
 
     saveAccount(account: ProviderAccount): void {
         writeAccountFile(account)
+        invalidateAccountCache()
     },
 
     deleteAccount(provider: AuthProvider, id: string): boolean {
@@ -159,6 +192,7 @@ export const authStore = {
         if (!existsSync(path)) return false
         try {
             unlinkSync(path)
+            invalidateAccountCache()
             return true
         } catch (error) {
             consola.warn("Failed to delete auth file:", path, error)

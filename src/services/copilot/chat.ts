@@ -6,8 +6,12 @@ import type { ProviderAccount } from "~/services/auth/types"
 import type { ClaudeMessage, ClaudeTool } from "~/lib/translator"
 import { toOpenAIMessages, toOpenAITools } from "~/services/providers/openai-adapter"
 
-// Disable TLS certificate verification for Copilot API calls
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+const COPILOT_INSECURE_TLS = process.env.ANTI_API_COPILOT_INSECURE_TLS === "1"
+const COPILOT_INSECURE_AGENT = COPILOT_INSECURE_TLS ? new https.Agent({ rejectUnauthorized: false }) : undefined
+
+export function isCopilotInsecureTlsEnabled(): boolean {
+    return COPILOT_INSECURE_TLS
+}
 
 const COPILOT_COMPLETIONS_URL = "https://api.githubcopilot.com/chat/completions"
 const COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
@@ -257,7 +261,7 @@ async function fetchInsecureJson(
         "User-Agent": "anti-api/1.0",
         ...(options.headers || {}),
     }
-    const insecureAgent = new https.Agent({ rejectUnauthorized: false })
+    const agent = COPILOT_INSECURE_AGENT
 
     return new Promise((resolve, reject) => {
         const req = https.request(
@@ -268,8 +272,8 @@ async function fetchInsecureJson(
                 path: `${target.pathname}${target.search}`,
                 method,
                 headers,
-                agent: insecureAgent,
-                rejectUnauthorized: false,
+                agent,
+                rejectUnauthorized: agent ? false : true,
                 timeout: 30000,
             },
             (res) => {
@@ -295,7 +299,13 @@ async function fetchInsecureJson(
             }
         )
 
-        req.on("error", reject)
+        req.on("error", (error) => {
+            if (!COPILOT_INSECURE_TLS && /certificate|self signed/i.test(error.message)) {
+                reject(new Error("Copilot TLS certificate error. Set ANTI_API_COPILOT_INSECURE_TLS=1 to bypass."))
+                return
+            }
+            reject(error)
+        })
         req.on("timeout", () => {
             req.destroy(new Error("Request timed out"))
         })

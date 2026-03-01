@@ -19,15 +19,41 @@
 
 > **Disclaimer**: This project is based on reverse engineering of Antigravity. Future compatibility is not guaranteed. For long-term use, avoid updating Antigravity.
 
-## What's New (v2.6.1)
+## What's New (v2.7.0)
 
-- **Credential transfer removed** - Login credential JSON export/import has been removed to reduce sensitive account exposure risk
-- **Core OAuth flows remain stable** - OAuth login remains fully supported for Antigravity, ChatGPT Codex, and GitHub Copilot
+- **Antigravity proxy notice** - Google has officially prohibited reverse-proxy usage of its AI services. The Antigravity reverse proxy still works for now but is **no longer recommended**
+- **Codex & Copilot unaffected** - Reverse-proxy services for Codex and GitHub Copilot remain fully functional and are not subject to the restriction above
+- **Log IDE Out** - New one-click action to sign out of the Antigravity IDE (closes the IDE, clears auth, ready for a different account)
 
-## 更新说明 (v2.6.1)
+## 更新说明 (v2.7.0)
 
-- **凭证传输功能下线** - 已移除登录凭据 JSON 导入导出，降低账号敏感信息暴露风险
-- **核心 OAuth 流程保持稳定** - 继续稳定支持 Antigravity、ChatGPT Codex、GitHub Copilot 三方登录
+- **Antigravity 代理风险提示** - Google 已明确禁止对其 AI 服务进行反向代理。Antigravity 反代目前仍可用，但**不建议继续使用**
+- **Codex & Copilot 不受影响** - Codex 和 GitHub Copilot 的反代服务正常运行，不受上述限制
+- **一键登出 IDE** - 新增 Log IDE Out 功能，关闭 Antigravity IDE 并清除登录态，方便快速切换账号
+
+<details>
+<summary>v2.6.2</summary>
+
+- **Per-request log context isolation** - Error logs no longer mix model/account under concurrency
+- **Copilot TLS hardening** - Default TLS verification restored; optional `ANTI_API_COPILOT_INSECURE_TLS=1` for restricted networks
+- **Codex TLS hardening** - Default TLS verification restored; optional `ANTI_API_CODEX_INSECURE_TLS=1` for restricted networks
+- **Routing config resilience** - Soft timeouts and caching for Copilot model sync and quota aggregation
+- **Dynamic model sync** - Routing now syncs Codex/Copilot model lists from authenticated accounts with static fallback
+- **Test baseline fixes** - `bun test ./test` avoids legacy folders; updated mocks and default settings
+
+</details>
+
+<details>
+<summary>v2.6.2 中文</summary>
+
+- **请求日志隔离** - 并发下日志不再串号，模型与账号可准确对应
+- **Copilot TLS 加固** - 默认启用证书校验；受限网络可用 `ANTI_API_COPILOT_INSECURE_TLS=1` 临时兼容
+- **Codex TLS 加固** - 默认启用证书校验；受限网络可用 `ANTI_API_CODEX_INSECURE_TLS=1` 临时兼容
+- **路由加载更稳** - Copilot 模型同步与配额聚合加入软超时与缓存
+- **动态模型同步** - 路由可从已登录账号同步 Codex/Copilot 模型并保留静态兜底
+- **测试基线修复** - `bun test ./test` 避免历史目录干扰，修复 mock 与默认设置断言
+
+</details>
 
 ## Features
 
@@ -106,6 +132,9 @@ Notes:
 - If running on a remote host, set `ANTI_API_OAUTH_REDIRECT_URL` to a public URL like `http://YOUR_HOST:51121/oauth-callback`.
 - The bind mount reuses your local `~/.anti-api` data so Docker shares the same accounts and routing config.
 - Set `ANTI_API_NO_OPEN=1` to avoid trying to open the browser inside a container.
+- If Copilot TLS fails in restricted networks, set `ANTI_API_COPILOT_INSECURE_TLS=1` (not recommended for general use).
+- If Codex TLS fails in restricted networks, set `ANTI_API_CODEX_INSECURE_TLS=1` (not recommended for general use).
+- Set Codex default reasoning effort with `ANTI_API_CODEX_REASONING_EFFORT=low|medium|high` (default: `medium`).
 - If Docker Hub is unstable, the default base image uses GHCR. You can override with `BUN_IMAGE=oven/bun:1.1.38`.
  - ngrok will auto-download inside the container if missing (Linux only).
 
@@ -286,6 +315,10 @@ Configure application behavior at `http://localhost:8964/settings`:
 | `gpt-5.1` | 5.1 |
 | `gpt-5.1-codex` | 5.1 Codex |
 | `gpt-5` | 5 |
+
+Codex reasoning effort support:
+- Global default: `ANTI_API_CODEX_REASONING_EFFORT=low|medium|high` (default: `medium`)
+- Per request (`/v1/chat/completions`): `reasoning_effort` or `reasoning.effort`
 
 ## API Endpoints
 
@@ -479,6 +512,10 @@ MIT
 | `gpt-5.2` | 5.2 |
 | `gpt-5.1` | 5.1 |
 | `gpt-5` | 5 |
+
+Codex 推理强度支持：
+- 全局默认：`ANTI_API_CODEX_REASONING_EFFORT=low|medium|high`（默认 `medium`）
+- 单次请求（OpenAI `/v1/chat/completions`）：`reasoning_effort` 或 `reasoning.effort`
 
 ## API 端点
 

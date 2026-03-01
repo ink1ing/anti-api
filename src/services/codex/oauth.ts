@@ -10,6 +10,8 @@ const CODEX_AUTH_FILE = "~/.codex/auth.json"
 const CODEX_PROXY_AUTH_DIR = "~/.cli-proxy-api"
 const CODEX_PROXY_REFRESH_URL = "https://token.oaifree.com/api/auth/refresh"
 const CODEX_CLI_LOGIN_TIMEOUT_MS = 10 * 60 * 1000
+const CODEX_INSECURE_TLS = process.env.ANTI_API_CODEX_INSECURE_TLS === "1"
+const CODEX_TLS_HINT = "Codex OAuth TLS certificate error. Set ANTI_API_CODEX_INSECURE_TLS=1 to bypass."
 
 type CodexCliLoginSession = {
     id: string
@@ -125,9 +127,7 @@ async function fetchJsonWithFallback(
 ): Promise<JsonResponse> {
     try {
         const bunFetch = (globalThis as { Bun?: { fetch?: typeof fetch } }).Bun?.fetch
-        const tls = process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0"
-            ? { rejectUnauthorized: false }
-            : undefined
+        const tls = CODEX_INSECURE_TLS ? { rejectUnauthorized: false } : undefined
         const response = bunFetch
             ? await bunFetch(url, {
                 method: options.method,
@@ -151,11 +151,13 @@ async function fetchJsonWithFallback(
         }
         return { status: response.status, data, text }
     } catch (error) {
-        if (isCertificateError(error)) {
-            consola.warn("Codex OAuth TLS error detected, retrying with insecure agent")
-        } else {
-            consola.warn("Codex OAuth request failed, retrying with insecure agent")
+        if (!isCertificateError(error)) {
+            throw error
         }
+        if (!CODEX_INSECURE_TLS) {
+            throw new Error(CODEX_TLS_HINT)
+        }
+        consola.warn("Codex OAuth TLS error detected, retrying with insecure agent")
         return fetchInsecureJson(url, options)
     }
 }
@@ -164,6 +166,9 @@ async function fetchInsecureJson(
     url: string,
     options: { method?: string; headers?: Record<string, string>; body?: string }
 ): Promise<JsonResponse> {
+    if (!CODEX_INSECURE_TLS) {
+        throw new Error(CODEX_TLS_HINT)
+    }
     const bunFetch = (globalThis as { Bun?: { fetch?: typeof fetch } }).Bun?.fetch
     if (bunFetch) {
         const response = await bunFetch(url, {

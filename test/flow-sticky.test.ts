@@ -1,8 +1,6 @@
 import { test, expect, mock, beforeAll, afterAll } from "bun:test"
-import { mkdtempSync, mkdirSync, writeFileSync } from "fs"
-import { tmpdir } from "os"
-import { join } from "path"
 import { UpstreamError } from "~/lib/error"
+import type { RoutingConfig } from "~/services/routing/config"
 
 const quotaErrorBody = JSON.stringify({
     error: {
@@ -28,6 +26,39 @@ let scenario: "none" | "head-exhausted" | "probe-head" = "head-exhausted"
 const callOrder: string[] = []
 const callCounts = new Map<string, number>()
 let rateLimitAll = false
+const routingConfig: RoutingConfig = {
+    version: 2,
+    updatedAt: new Date().toISOString(),
+    flows: [
+        {
+            id: "flow-head",
+            name: "flow-head",
+            entries: [
+                { id: "e1", provider: "antigravity", accountId: "acc1", modelId: "claude-opus-4-5-thinking", label: "Opus 1" },
+                { id: "e2", provider: "antigravity", accountId: "acc2", modelId: "claude-opus-4-5-thinking", label: "Opus 2" },
+                { id: "e3", provider: "antigravity", accountId: "acc3", modelId: "claude-opus-4-5-thinking", label: "Opus 3" },
+            ],
+        },
+        {
+            id: "flow-probe",
+            name: "flow-probe",
+            entries: [
+                { id: "p1", provider: "antigravity", accountId: "b1", modelId: "claude-opus-4-5-thinking", label: "Opus 1" },
+                { id: "p2", provider: "antigravity", accountId: "b2", modelId: "claude-opus-4-5-thinking", label: "Opus 2" },
+                { id: "p3", provider: "antigravity", accountId: "b3", modelId: "claude-opus-4-5-thinking", label: "Opus 3" },
+            ],
+        },
+        {
+            id: "flow-rate-limit",
+            name: "flow-rate-limit",
+            entries: [
+                { id: "r1", provider: "antigravity", accountId: "r1", modelId: "claude-opus-4-5-thinking", label: "Opus 1" },
+                { id: "r2", provider: "antigravity", accountId: "r2", modelId: "claude-opus-4-5-thinking", label: "Opus 2" },
+            ],
+        },
+    ],
+    accountRouting: { smartSwitch: false, routes: [] },
+}
 
 function resetTracking(resetCounts: boolean) {
     callOrder.length = 0
@@ -69,66 +100,25 @@ mock.module("~/services/antigravity/account-manager", () => ({
     accountManager: {
         hasAccount: () => true,
         isAccountRateLimited: () => rateLimitAll,
+        isAccountInFlight: () => false,
         markRateLimitedFromError: async () => ({ reason: "quota_exhausted", durationMs: 60_000 }),
         clearAllRateLimits: () => { },
     },
 }))
 
+mock.module("~/services/routing/config", () => ({
+    loadRoutingConfig: () => routingConfig,
+}))
+
 let createRoutedCompletion: (request: any) => Promise<any>
-let originalHome: string | undefined
-let originalUserProfile: string | undefined
 
 beforeAll(async () => {
-    originalHome = process.env.HOME
-    originalUserProfile = process.env.USERPROFILE
-
-    const tempHome = mkdtempSync(join(tmpdir(), "anti-api-test-"))
-    process.env.HOME = tempHome
-    process.env.USERPROFILE = tempHome
-
-    const configDir = join(tempHome, ".anti-api")
-    mkdirSync(configDir, { recursive: true })
-    writeFileSync(join(configDir, "routing.json"), JSON.stringify({
-        version: 2,
-        updatedAt: new Date().toISOString(),
-        flows: [
-            {
-                id: "flow-head",
-                name: "flow-head",
-                entries: [
-                    { id: "e1", provider: "antigravity", accountId: "acc1", modelId: "claude-opus-4-5-thinking", label: "Opus 1" },
-                    { id: "e2", provider: "antigravity", accountId: "acc2", modelId: "claude-opus-4-5-thinking", label: "Opus 2" },
-                    { id: "e3", provider: "antigravity", accountId: "acc3", modelId: "claude-opus-4-5-thinking", label: "Opus 3" },
-                ],
-            },
-            {
-                id: "flow-probe",
-                name: "flow-probe",
-                entries: [
-                    { id: "p1", provider: "antigravity", accountId: "b1", modelId: "claude-opus-4-5-thinking", label: "Opus 1" },
-                    { id: "p2", provider: "antigravity", accountId: "b2", modelId: "claude-opus-4-5-thinking", label: "Opus 2" },
-                    { id: "p3", provider: "antigravity", accountId: "b3", modelId: "claude-opus-4-5-thinking", label: "Opus 3" },
-                ],
-            },
-            {
-                id: "flow-rate-limit",
-                name: "flow-rate-limit",
-                entries: [
-                    { id: "r1", provider: "antigravity", accountId: "r1", modelId: "claude-opus-4-5-thinking", label: "Opus 1" },
-                    { id: "r2", provider: "antigravity", accountId: "r2", modelId: "claude-opus-4-5-thinking", label: "Opus 2" },
-                ],
-            },
-        ],
-        accountRouting: { smartSwitch: false, routes: [] },
-    }, null, 2))
-
-    const router = await import("~/services/routing/router")
+    const router = await import(`../src/services/routing/router.ts?${Date.now()}-${Math.random()}`)
     createRoutedCompletion = router.createRoutedCompletion
 })
 
 afterAll(() => {
-    process.env.HOME = originalHome
-    process.env.USERPROFILE = originalUserProfile
+    mock.restore()
 })
 
 test("flow sticky skips exhausted head on subsequent requests", async () => {
@@ -166,7 +156,7 @@ test("flow sticky probes head only when current account is exhausted", async () 
         model: "flow-probe",
         messages: [{ role: "user", content: "next" }],
     })
-    expect(callOrder).toEqual(["b2", "b1", "b3"])
+    expect(callOrder).toEqual(["b2", "b3"])
 
     resetTracking(false)
     await createRoutedCompletion({

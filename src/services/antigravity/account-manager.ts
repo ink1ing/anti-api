@@ -130,6 +130,13 @@ function defaultRateLimitMs(reason: RateLimitReason, failures: number): number {
 }
 
 const RESET_TIME_BUFFER_MS = 2000
+const DEFAULT_ACCOUNT_LOCK_WAIT_TIMEOUT_MS = 45_000
+
+function getAccountLockWaitTimeoutMs(): number {
+    const raw = Number(process.env.ANTI_API_ACCOUNT_LOCK_WAIT_TIMEOUT_MS || DEFAULT_ACCOUNT_LOCK_WAIT_TIMEOUT_MS)
+    if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_ACCOUNT_LOCK_WAIT_TIMEOUT_MS
+    return Math.floor(raw)
+}
 
 export interface Account {
     id: string
@@ -154,6 +161,7 @@ class AccountManager {
     private accountQueue: string[] = []
     // 🆕 账号并发控制（同一账号同一时刻只处理一个请求）
     private inFlightAccounts = new Set<string>()
+    private inFlightStartedAt = new Map<string, number>()
     private accountLocks = new Map<string, Promise<void>>()
     private lastCallByAccount = new Map<string, number>()
 
@@ -307,6 +315,7 @@ class AccountManager {
             this.accounts.delete(accountIdOrEmail)
             removeFromQueue(accountIdOrEmail)
             this.inFlightAccounts.delete(accountIdOrEmail)
+            this.inFlightStartedAt.delete(accountIdOrEmail)
             this.accountLocks.delete(accountIdOrEmail)
             this.lastCallByAccount.delete(accountIdOrEmail)
             this.save()
@@ -320,6 +329,7 @@ class AccountManager {
                 this.accounts.delete(id)
                 removeFromQueue(id)
                 this.inFlightAccounts.delete(id)
+                this.inFlightStartedAt.delete(id)
                 this.accountLocks.delete(id)
                 this.lastCallByAccount.delete(id)
                 this.save()
@@ -369,7 +379,33 @@ class AccountManager {
         const tail = previous.then(() => next)
         this.accountLocks.set(accountId, tail)
 
-        await previous
+        let waitTimedOut = false
+        const waitTimeoutMs = getAccountLockWaitTimeoutMs()
+        let timeoutId: ReturnType<typeof setTimeout> | null = null
+        try {
+            await Promise.race([
+                previous,
+                new Promise<void>(resolve => {
+                    timeoutId = setTimeout(() => {
+                        waitTimedOut = true
+                        resolve()
+                    }, waitTimeoutMs)
+                }),
+            ])
+        } finally {
+            if (timeoutId) clearTimeout(timeoutId)
+        }
+
+        if (waitTimedOut) {
+            const startedAt = this.inFlightStartedAt.get(accountId)
+            const holdMs = startedAt ? Date.now() - startedAt : null
+            consola.warn(
+                `[AccountLock] Wait timeout for ${accountId}; force-recovering stale lock${holdMs !== null ? ` (held ${Math.ceil(holdMs / 1000)}s)` : ""}`
+            )
+            this.inFlightAccounts.delete(accountId)
+            this.inFlightStartedAt.delete(accountId)
+            this.accountLocks.delete(accountId)
+        }
 
         const lastCall = this.lastCallByAccount.get(accountId) || 0
         const elapsed = Date.now() - lastCall
@@ -379,12 +415,14 @@ class AccountManager {
         this.lastCallByAccount.set(accountId, Date.now())
 
         this.inFlightAccounts.add(accountId)
+        this.inFlightStartedAt.set(accountId, Date.now())
 
         let released = false
         return () => {
             if (released) return
             released = true
             this.inFlightAccounts.delete(accountId)
+            this.inFlightStartedAt.delete(accountId)
             resolveNext!()
             if (this.accountLocks.get(accountId) === tail) {
                 this.accountLocks.delete(accountId)
@@ -760,6 +798,42 @@ class AccountManager {
             email: account.email,
             accountId: account.id,
         }
+    }
+
+    /**
+     * Force refresh projectId for a specific account.
+     * Useful when upstream returns NOT_FOUND for a stale project resource.
+     */
+    async refreshProjectId(accountId: string, accessTokenOverride?: string): Promise<string | null> {
+        this.ensureLoaded()
+        if (!this.accounts.has(accountId)) {
+            this.hydrateFromAuthStore(accountId)
+        }
+        const account = this.accounts.get(accountId)
+        if (!account) return null
+
+        if (accessTokenOverride && accessTokenOverride.trim()) {
+            account.accessToken = accessTokenOverride
+        }
+
+        let resolved = await getProjectID(account.accessToken)
+        if (!resolved) {
+            resolved = generateMockProjectId()
+        }
+
+        account.projectId = resolved
+        this.save()
+        authStore.saveAccount({
+            id: account.id,
+            provider: "antigravity",
+            email: account.email,
+            accessToken: account.accessToken,
+            refreshToken: account.refreshToken,
+            expiresAt: account.expiresAt,
+            projectId: account.projectId || undefined,
+            label: account.email,
+        })
+        return resolved
     }
 
     private async fetchQuotaResetTime(account: Account, modelId?: string): Promise<number | null> {

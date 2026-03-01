@@ -42,8 +42,9 @@ const COPILOT_STATIC_MODELS: ProviderModelOption[] = [
 ]
 
 let dynamicCopilotModels: ProviderModelOption[] = []
+let dynamicCodexModels: ProviderModelOption[] = []
 
-function sanitizeModelOptions(models: ProviderModelOption[]): ProviderModelOption[] {
+function sanitizeModelOptions(models: ProviderModelOption[], prefix: string): ProviderModelOption[] {
     const deduped = new Map<string, ProviderModelOption>()
 
     for (const model of models) {
@@ -51,7 +52,7 @@ function sanitizeModelOptions(models: ProviderModelOption[]): ProviderModelOptio
         if (!id) continue
         if (deduped.has(id)) continue
 
-        const label = model?.label?.trim() || `Copilot - ${id}`
+        const label = model?.label?.trim() || `${prefix} - ${id}`
         deduped.set(id, { id, label })
     }
 
@@ -71,11 +72,20 @@ function mergeModelOptions(...groups: ProviderModelOption[][]): ProviderModelOpt
 }
 
 export function setDynamicCopilotModels(models: ProviderModelOption[]): void {
-    dynamicCopilotModels = sanitizeModelOptions(models)
+    dynamicCopilotModels = sanitizeModelOptions(models, "Copilot")
 }
 
 export function clearDynamicCopilotModels(): void {
     dynamicCopilotModels = []
+}
+
+export function setDynamicCodexModels(models: ProviderModelOption[]): void {
+    dynamicCodexModels = sanitizeModelOptions(models, "Codex")
+        .filter(model => !CODEX_HIDDEN_MODELS.has(model.id))
+}
+
+export function clearDynamicCodexModels(): void {
+    dynamicCodexModels = []
 }
 
 export function getProviderModels(provider: AuthProvider): ProviderModelOption[] {
@@ -91,7 +101,9 @@ export function getProviderModels(provider: AuthProvider): ProviderModelOption[]
     }
 
     if (provider === "codex") {
-        // ChatGPT Plus Codex only supports gpt-5 series models
+        if (dynamicCodexModels.length > 0) {
+            return dynamicCodexModels
+        }
         return CODEX_MODELS.filter(model => !CODEX_HIDDEN_MODELS.has(model.id))
     }
 

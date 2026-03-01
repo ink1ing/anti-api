@@ -3,6 +3,8 @@
  * Provides formatted output for server status and request logs
  */
 
+import { AsyncLocalStorage } from "async_hooks"
+
 const SEPARATOR = "================================"
 
 // Provider display names
@@ -26,7 +28,12 @@ export interface RequestLogContext {
     routeTag?: string
 }
 
-let lastRequestContext: RequestLogContext = {}
+const requestContext = new AsyncLocalStorage<RequestLogContext>()
+let fallbackContext: RequestLogContext = {}
+
+export function runWithRequestContext<T>(fn: () => Promise<T> | T): Promise<T> | T {
+    return requestContext.run({}, fn)
+}
 
 export function formatLogTime(): string {
     return new Date().toLocaleTimeString("en-US", {
@@ -38,12 +45,19 @@ export function formatLogTime(): string {
 }
 
 export function setRequestLogContext(ctx: RequestLogContext): void {
-    lastRequestContext = ctx
+    const store = requestContext.getStore()
+    if (store) {
+        Object.assign(store, ctx)
+        return
+    }
+    fallbackContext = { ...ctx }
 }
 
 export function getRequestLogContext(): RequestLogContext {
-    const ctx = lastRequestContext
-    lastRequestContext = {} // Clear after read
+    const store = requestContext.getStore()
+    if (store) return store
+    const ctx = fallbackContext
+    fallbackContext = {}
     return ctx
 }
 

@@ -2,7 +2,7 @@ import type { ClaudeMessage, ClaudeTool } from "~/lib/translator"
 import { UpstreamError } from "~/lib/error"
 import { createChatCompletionWithOptions, createChatCompletionStreamWithOptions } from "~/services/antigravity/chat"
 import { accountManager } from "~/services/antigravity/account-manager"
-import { createCodexCompletion } from "~/services/codex/chat"
+import { createCodexCompletion, isCodexModelSupportedForAccount, isCodexUnsupportedModelError } from "~/services/codex/chat"
 import { createCopilotCompletion } from "~/services/copilot/chat"
 import { authStore } from "~/services/auth/store"
 import type { ProviderAccount } from "~/services/auth/types"
@@ -31,6 +31,7 @@ interface RoutedRequest {
         name?: string
     }
     maxTokens?: number
+    reasoningEffort?: "low" | "medium" | "high"
 }
 
 type FlowStickyState = {
@@ -52,6 +53,8 @@ function normalizeOfficialModelId(model: string): string {
     const normalized = model?.trim()
     if (!normalized) return model
     const map: Record<string, string> = {
+        "claude-opus-4-6": "claude-opus-4-6-thinking",
+        "claude-opus-4.6": "claude-opus-4-6-thinking",
         "claude-sonnet-4.5": "claude-sonnet-4-5",
         "claude-sonnet-4.5-thinking": "claude-sonnet-4-5-thinking",
         "claude-opus-4.5-thinking": "claude-opus-4-5-thinking",
@@ -281,6 +284,9 @@ function shouldFallbackOnUpstream(entry: RoutingEntry | AccountRoutingEntry, err
     if (error.status === 429) {
         return isQuotaExhausted(error) || (error as any).retryable === true
     }
+    if (entry.provider === "codex" && isCodexUnsupportedModelError(error)) {
+        return true
+    }
     // Antigravity may return 404 for model-account mismatch; fallback to the next account.
     if (entry.provider === "antigravity" && error.status === 404) {
         return true
@@ -410,12 +416,26 @@ function shouldSkipFlowEntry(
         return true
     }
 
+    if (entry.provider === "codex") {
+        const support = isCodexModelSupportedForAccount(entry.accountId, entry.modelId)
+        if (support === false) {
+            return true
+        }
+    }
+
     const account = authStore.getAccount(entry.provider, entry.accountId)
     return !account
 }
 
 function applyFlowRateLimit(entry: RoutingEntry, error: UpstreamError, requestModel: string): void {
     if (entry.provider === "antigravity" && entry.accountId !== "auto") {
+        // 404 is usually a model-account mismatch or transient upstream routing miss,
+        // not an account quota/rate-limit signal. Avoid cooling down the account.
+        // 401/403 are auth/permission class errors and should not poison account
+        // availability with synthetic 429 "account unavailable" on subsequent requests.
+        if (error.status === 404 || error.status === 401 || error.status === 403) {
+            return
+        }
         const cooldownMs = error.status >= 500 ? ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS : 30_000
         accountManager
             .markRateLimitedFromError(entry.accountId, error.status, error.body, error.retryAfter, requestModel, { maxDurationMs: cooldownMs })
@@ -493,7 +513,7 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
 
         if (entry.provider === "codex") {
             const startTime = Date.now()
-            const result = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
+            const result = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens, request.reasoningEffort)
             recordProviderUsage(entry.modelId, result)
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
             console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "fr" }))
@@ -590,7 +610,26 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
 
     if (!lastError && entries.length > 0) {
         const fallbackIndex = flowState?.cursor ?? 0
-        const entry = entries[fallbackIndex]
+        let entry: RoutingEntry | null = null
+        for (let offset = 0; offset < entries.length; offset++) {
+            const index = (fallbackIndex + offset) % entries.length
+            const candidate = entries[index]
+            if (shouldSkipFlowEntry(candidate, entries.length)) {
+                continue
+            }
+            entry = candidate
+            break
+        }
+        if (!entry) {
+            const cursorEntry = entries[fallbackIndex]
+            if (cursorEntry.provider === "codex") {
+                const support = isCodexModelSupportedForAccount(cursorEntry.accountId, cursorEntry.modelId)
+                if (support === false) {
+                    throw new RoutingError("No routing entries available", 400)
+                }
+            }
+            entry = cursorEntry
+        }
         try {
             if (entry.provider === "antigravity") {
                 const accountId = entry.accountId === "auto" ? undefined : entry.accountId
@@ -611,7 +650,7 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
 
             if (entry.provider === "codex") {
                 const startTime = Date.now()
-                const result = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
+                const result = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens, request.reasoningEffort)
                 recordProviderUsage(entry.modelId, result)
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
                 console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "fr" }))
@@ -670,6 +709,14 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 continue
             }
 
+            if (entry.provider === "codex") {
+                const support = isCodexModelSupportedForAccount(entry.accountId, request.model)
+                if (support === false) {
+                    advanceAccountCursor(accountState, entries.length, index)
+                    continue
+                }
+            }
+
             const account = authStore.getAccount(entry.provider, entry.accountId)
             if (!account) {
                 continue
@@ -679,7 +726,7 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
 
             if (entry.provider === "codex") {
                 const startTime = Date.now()
-                const result = await createCodexCompletion(account, request.model, request.messages, request.tools, request.maxTokens)
+                const result = await createCodexCompletion(account, request.model, request.messages, request.tools, request.maxTokens, request.reasoningEffort)
                 recordProviderUsage(request.model, result)
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
                 console.log(formatSuccessLine({ elapsed, model: request.model, provider: "codex", account: accountDisplay, routeTag: "ar" }))
@@ -706,16 +753,18 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
                 const shouldAdvance = shouldAdvanceCursorOnError(entry, error)
                 if (shouldAdvance) {
                     if (entry.provider === "antigravity") {
-                        const cooldownMs = error.status >= 500 ? ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS : DEFAULT_ROUTER_COOLDOWN_MS
-                        accountManager.markRateLimitedFromError(
-                            entry.accountId,
-                            error.status,
-                            error.body,
-                            error.retryAfter,
-                            request.model,
-                            { maxDurationMs: cooldownMs }
-                        )
-                        markRouterRateLimited("antigravity", entry.accountId, cooldownMs)
+                        if (error.status !== 404 && error.status !== 401 && error.status !== 403) {
+                            const cooldownMs = error.status >= 500 ? ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS : DEFAULT_ROUTER_COOLDOWN_MS
+                            accountManager.markRateLimitedFromError(
+                                entry.accountId,
+                                error.status,
+                                error.body,
+                                error.retryAfter,
+                                request.model,
+                                { maxDurationMs: cooldownMs }
+                            )
+                            markRouterRateLimited("antigravity", entry.accountId, cooldownMs)
+                        }
                     } else {
                         authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
                         markRouterRateLimited(entry.provider, entry.accountId, DEFAULT_ROUTER_COOLDOWN_MS)
@@ -743,21 +792,23 @@ async function createAccountCompletionWithEntries(request: RoutedRequest, entrie
 }
 
 export async function createRoutedCompletion(request: RoutedRequest) {
-    if (isHiddenCodexModel(request.model)) {
+    const normalizedModel = normalizeOfficialModelId(request.model)
+    if (isHiddenCodexModel(normalizedModel)) {
         throw new RoutingError("Model is not available", 400)
     }
+    const normalizedRequest = normalizedModel === request.model ? request : { ...request, model: normalizedModel }
     const config = loadRoutingConfig()
     const activeFlow = resolveActiveFlowSelection(config)
     if (activeFlow) {
-        return createFlowCompletionWithEntries(request, activeFlow.entries, activeFlow.flowKey)
+        return createFlowCompletionWithEntries(normalizedRequest, activeFlow.entries, activeFlow.flowKey)
     }
-    if (isOfficialModel(request.model)) {
-        const accountEntries = resolveAccountEntries(config, request.model)
-        return createAccountCompletionWithEntries(request, accountEntries)
+    if (isOfficialModel(normalizedModel)) {
+        const accountEntries = resolveAccountEntries(config, normalizedModel)
+        return createAccountCompletionWithEntries(normalizedRequest, accountEntries)
     }
 
-    const flowSelection = resolveFlowSelection(config, request.model)
-    return createFlowCompletionWithEntries(request, flowSelection.entries, flowSelection.flowKey)
+    const flowSelection = resolveFlowSelection(config, normalizedRequest.model)
+    return createFlowCompletionWithEntries(normalizedRequest, flowSelection.entries, flowSelection.flowKey)
 }
 
 async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, entries: RoutingEntry[], flowKey?: string): AsyncGenerator<string, void, unknown> {
@@ -789,7 +840,7 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
         let startTime = 0
         if (entry.provider === "codex") {
             startTime = Date.now()
-            completion = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
+            completion = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens, request.reasoningEffort)
         } else if (entry.provider === "copilot") {
             startTime = Date.now()
             completion = await createCopilotCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
@@ -908,7 +959,26 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
 
     if (!lastError && entries.length > 0) {
         const fallbackIndex = flowState?.cursor ?? 0
-        const entry = entries[fallbackIndex]
+        let entry: RoutingEntry | null = null
+        for (let offset = 0; offset < entries.length; offset++) {
+            const index = (fallbackIndex + offset) % entries.length
+            const candidate = entries[index]
+            if (shouldSkipFlowEntry(candidate, entries.length)) {
+                continue
+            }
+            entry = candidate
+            break
+        }
+        if (!entry) {
+            const cursorEntry = entries[fallbackIndex]
+            if (cursorEntry.provider === "codex") {
+                const support = isCodexModelSupportedForAccount(cursorEntry.accountId, cursorEntry.modelId)
+                if (support === false) {
+                    throw new RoutingError("No routing entries available", 400)
+                }
+            }
+            entry = cursorEntry
+        }
         if (entry.provider === "antigravity") {
             const accountId = entry.accountId === "auto" ? undefined : entry.accountId
             setRequestLogContext({ model: entry.modelId, provider: "antigravity", account: entry.accountId, routeTag: "fr" })
@@ -931,7 +1001,7 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
         let startTime = 0
         if (entry.provider === "codex") {
             startTime = Date.now()
-            completion = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
+            completion = await createCodexCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens, request.reasoningEffort)
         } else if (entry.provider === "copilot") {
             startTime = Date.now()
             completion = await createCopilotCompletion(account, entry.modelId, request.messages, request.tools, request.maxTokens)
@@ -1011,6 +1081,14 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 continue
             }
 
+            if (entry.provider === "codex") {
+                const support = isCodexModelSupportedForAccount(entry.accountId, request.model)
+                if (support === false) {
+                    advanceAccountCursor(accountState, entries.length, index)
+                    continue
+                }
+            }
+
             const account = authStore.getAccount(entry.provider, entry.accountId)
             if (!account) {
                 continue
@@ -1022,7 +1100,7 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
             let startTime = 0
             if (entry.provider === "codex") {
                 startTime = Date.now()
-                completion = await createCodexCompletion(account, request.model, request.messages, request.tools, request.maxTokens)
+                completion = await createCodexCompletion(account, request.model, request.messages, request.tools, request.maxTokens, request.reasoningEffort)
             } else if (entry.provider === "copilot") {
                 startTime = Date.now()
                 completion = await createCopilotCompletion(account, request.model, request.messages, request.tools, request.maxTokens)
@@ -1073,16 +1151,18 @@ async function* createAccountCompletionStreamWithEntries(request: RoutedRequest,
                 const shouldAdvance = shouldAdvanceCursorOnError(entry, error)
                 if (shouldAdvance) {
                     if (entry.provider === "antigravity") {
-                        const cooldownMs = error.status >= 500 ? ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS : DEFAULT_ROUTER_COOLDOWN_MS
-                        accountManager.markRateLimitedFromError(
-                            entry.accountId,
-                            error.status,
-                            error.body,
-                            error.retryAfter,
-                            request.model,
-                            { maxDurationMs: cooldownMs }
-                        )
-                        markRouterRateLimited("antigravity", entry.accountId, cooldownMs)
+                        if (error.status !== 404 && error.status !== 401 && error.status !== 403) {
+                            const cooldownMs = error.status >= 500 ? ANTIGRAVITY_SERVER_ERROR_COOLDOWN_MS : DEFAULT_ROUTER_COOLDOWN_MS
+                            accountManager.markRateLimitedFromError(
+                                entry.accountId,
+                                error.status,
+                                error.body,
+                                error.retryAfter,
+                                request.model,
+                                { maxDurationMs: cooldownMs }
+                            )
+                            markRouterRateLimited("antigravity", entry.accountId, cooldownMs)
+                        }
                     } else {
                         authStore.markRateLimited(entry.provider, entry.accountId, error.status, error.body, error.retryAfter)
                         markRouterRateLimited(entry.provider, entry.accountId, DEFAULT_ROUTER_COOLDOWN_MS)

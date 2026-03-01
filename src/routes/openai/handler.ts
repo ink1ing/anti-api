@@ -20,6 +20,8 @@ import { validateChatRequest } from "~/lib/validation"
 import { rateLimiter } from "~/lib/rate-limiter"
 import { forwardError, summarizeUpstreamError, UpstreamError } from "~/lib/error"
 
+type ReasoningEffort = "low" | "medium" | "high"
+
 function normalizeChatPayload(payload: OpenAIChatCompletionRequest): void {
     if (payload.max_tokens !== undefined && (payload.max_tokens === null || payload.max_tokens <= 0)) {
         delete (payload as { max_tokens?: number | null }).max_tokens
@@ -33,6 +35,14 @@ function normalizeChatPayload(payload: OpenAIChatCompletionRequest): void {
     if (payload.tools !== undefined && payload.tools === null) {
         delete (payload as { tools?: any[] | null }).tools
     }
+}
+
+function extractReasoningEffort(payload: OpenAIChatCompletionRequest): ReasoningEffort | undefined {
+    const candidate = payload.reasoning_effort ?? payload.reasoning?.effort
+    if (candidate === "low" || candidate === "medium" || candidate === "high") {
+        return candidate
+    }
+    return undefined
 }
 
 function buildValidationReason(message?: string): string {
@@ -60,9 +70,10 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
         const anthropicModel = mapModel(payload.model)
         const messages = translateMessages(payload.messages)
         const tools = translateTools(payload.tools)
+        const reasoningEffort = extractReasoningEffort(payload)
 
         if (payload.stream) {
-            return handleStreamCompletion(c, payload, anthropicModel, messages, tools)
+            return handleStreamCompletion(c, payload, anthropicModel, messages, tools, reasoningEffort)
         }
 
         let result
@@ -72,6 +83,7 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
                 messages,
                 tools,
                 maxTokens: payload.max_tokens || 4096,
+                reasoningEffort,
             })
         } catch (error) {
             if (error instanceof RoutingError) {
@@ -133,7 +145,8 @@ async function handleStreamCompletion(
     payload: OpenAIChatCompletionRequest,
     anthropicModel: string,
     messages: any[],
-    tools: any[] | undefined
+    tools: any[] | undefined,
+    reasoningEffort?: ReasoningEffort
 ): Promise<Response> {
     const chatId = generateChatId()
 
@@ -144,6 +157,7 @@ async function handleStreamCompletion(
                 messages,
                 tools,
                 maxTokens: payload.max_tokens || 4096,
+                reasoningEffort,
             })
 
             let sentRole = false

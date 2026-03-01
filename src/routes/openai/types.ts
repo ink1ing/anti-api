@@ -10,6 +10,10 @@ export interface OpenAIChatCompletionRequest {
     temperature?: number
     top_p?: number
     tools?: OpenAITool[]
+    reasoning_effort?: "low" | "medium" | "high"
+    reasoning?: {
+        effort?: "low" | "medium" | "high"
+    }
 }
 
 export interface OpenAIMessage {

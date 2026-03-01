@@ -2,7 +2,8 @@ import { Hono } from "hono"
 import consola from "consola"
 import { authStore } from "~/services/auth/store"
 import { listCopilotModelsForAccount } from "~/services/copilot/chat"
-import { getProviderModels, setDynamicCopilotModels } from "~/services/routing/models"
+import { listCodexModelsForAccount } from "~/services/codex/chat"
+import { clearDynamicCodexModels, clearDynamicCopilotModels, getProviderModels, setDynamicCodexModels, setDynamicCopilotModels } from "~/services/routing/models"
 import { loadRoutingConfig, saveRoutingConfig, setActiveFlow, type RoutingEntry, type RoutingFlow, type AccountRoutingConfig } from "~/services/routing/config"
 import { accountManager } from "~/services/antigravity/account-manager"
 import { getAggregatedQuota } from "~/services/quota-aggregator"
@@ -12,6 +13,36 @@ import { randomUUID } from "crypto"
 import type { ProviderAccount, ProviderAccountSummary } from "~/services/auth/types"
 
 export const routingRouter = new Hono()
+
+const COPILOT_SYNC_TTL_MS = 60_000
+const COPILOT_SYNC_TIMEOUT_MS = 800
+const CODEX_SYNC_TTL_MS = 60_000
+const CODEX_SYNC_TIMEOUT_MS = 800
+const QUOTA_TIMEOUT_MS = 1200
+const QUOTA_TTL_MS = 15_000
+
+let lastCopilotSyncAt = 0
+let copilotSyncInFlight: Promise<void> | null = null
+let lastCodexSyncAt = 0
+let codexSyncInFlight: Promise<void> | null = null
+let lastQuotaSnapshot: Awaited<ReturnType<typeof getAggregatedQuota>> | null = null
+let lastQuotaAt = 0
+let quotaInFlight: Promise<Awaited<ReturnType<typeof getAggregatedQuota>> | null> | null = null
+
+async function settleWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<{ ok: boolean; value?: T; error?: Error; timedOut?: boolean }> {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    const timeoutPromise = new Promise<{ ok: boolean; error: Error; timedOut: boolean }>((resolve) => {
+        timeoutId = setTimeout(() => resolve({ ok: false, error: new Error("timeout"), timedOut: true }), timeoutMs)
+    })
+    const result = await Promise.race([
+        promise
+            .then(value => ({ ok: true, value }))
+            .catch(error => ({ ok: false, error: error instanceof Error ? error : new Error(String(error)) })),
+        timeoutPromise,
+    ])
+    if (timeoutId) clearTimeout(timeoutId)
+    return result as { ok: boolean; value?: T; error?: Error; timedOut?: boolean }
+}
 
 function resolveAccountLabel(provider: "antigravity" | "codex" | "copilot", accountId: string, fallback?: string): string {
     if (accountId === "auto") return "auto"
@@ -92,24 +123,96 @@ routingRouter.get("/config", async (c) => {
     const codexAccounts = listAccountsInOrder("codex")
     const copilotAccounts = listAccountsInOrder("copilot")
 
-    const primaryCopilotAccount = copilotAccounts.find(account => !!account.accessToken)
-    if (primaryCopilotAccount) {
-        try {
-            const remoteModels = await listCopilotModelsForAccount(primaryCopilotAccount)
-            if (remoteModels.length > 0) {
-                const dynamicModels = remoteModels.map(model => ({
-                    id: model.id,
-                    label: `Copilot - ${model.name?.trim() || model.id}`,
-                }))
-                setDynamicCopilotModels(dynamicModels)
-                consola.debug(`[routing] Copilot models synced (${dynamicModels.length}) from ${primaryCopilotAccount.id}`)
-            } else {
-                consola.debug("[routing] Copilot models sync returned empty list; using fallback")
-            }
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
-            consola.warn(`[routing] Copilot models sync failed: ${message}`)
+    const now = Date.now()
+    if (copilotAccounts.length === 0) {
+        clearDynamicCopilotModels()
+        lastCopilotSyncAt = 0
+    } else if (now - lastCopilotSyncAt > COPILOT_SYNC_TTL_MS) {
+        if (!copilotSyncInFlight) {
+            lastCopilotSyncAt = now
+            copilotSyncInFlight = (async () => {
+                let synced = false
+                try {
+                    for (const account of copilotAccounts) {
+                        try {
+                            const remoteModels = await listCopilotModelsForAccount(account)
+                            if (remoteModels.length === 0) {
+                                continue
+                            }
+                            const dynamicModels = remoteModels.map(model => ({
+                                id: model.id,
+                                label: `Copilot - ${model.name?.trim() || model.id}`,
+                            }))
+                            setDynamicCopilotModels(dynamicModels)
+                            consola.debug(`[routing] Copilot models synced (${dynamicModels.length}) from ${account.id}`)
+                            synced = true
+                            break
+                        } catch (error) {
+                            const message = error instanceof Error ? error.message : String(error)
+                            consola.debug(`[routing] Copilot models sync skipped ${account.id}: ${message}`)
+                        }
+                    }
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error)
+                    consola.warn(`[routing] Copilot models sync failed: ${message}`)
+                } finally {
+                    if (!synced) {
+                        clearDynamicCopilotModels()
+                        consola.debug("[routing] Copilot models sync unavailable; using static fallback")
+                    }
+                    copilotSyncInFlight = null
+                }
+            })()
         }
+    }
+
+    if (codexAccounts.length === 0) {
+        clearDynamicCodexModels()
+        lastCodexSyncAt = 0
+    } else if (now - lastCodexSyncAt > CODEX_SYNC_TTL_MS) {
+        if (!codexSyncInFlight) {
+            lastCodexSyncAt = now
+            codexSyncInFlight = (async () => {
+                let synced = false
+                try {
+                    for (const account of codexAccounts) {
+                        try {
+                            const remoteModels = await listCodexModelsForAccount(account)
+                            if (remoteModels.length === 0) {
+                                continue
+                            }
+                            setDynamicCodexModels(remoteModels)
+                            consola.debug(`[routing] Codex models synced (${remoteModels.length}) from ${account.id}`)
+                            synced = true
+                            break
+                        } catch (error) {
+                            const message = error instanceof Error ? error.message : String(error)
+                            consola.debug(`[routing] Codex models sync skipped ${account.id}: ${message}`)
+                        }
+                    }
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error)
+                    consola.warn(`[routing] Codex models sync failed: ${message}`)
+                } finally {
+                    if (!synced) {
+                        clearDynamicCodexModels()
+                        consola.debug("[routing] Codex models sync unavailable; using static fallback")
+                    }
+                    codexSyncInFlight = null
+                }
+            })()
+        }
+    }
+
+    const syncWaiters: Promise<unknown>[] = []
+    if (copilotSyncInFlight) {
+        syncWaiters.push(settleWithTimeout(copilotSyncInFlight, COPILOT_SYNC_TIMEOUT_MS))
+    }
+    if (codexSyncInFlight) {
+        syncWaiters.push(settleWithTimeout(codexSyncInFlight, CODEX_SYNC_TIMEOUT_MS))
+    }
+    if (syncWaiters.length > 0) {
+        await Promise.all(syncWaiters)
     }
 
     const accounts = {
@@ -126,10 +229,31 @@ routingRouter.get("/config", async (c) => {
 
     // Get quota data for displaying on model blocks
     let quota: Awaited<ReturnType<typeof getAggregatedQuota>> | null = null
-    try {
-        quota = await getAggregatedQuota()
-    } catch {
-        // Quota fetch is optional, continue without it
+    const shouldFetchQuota = !lastQuotaSnapshot || now - lastQuotaAt > QUOTA_TTL_MS
+    if (shouldFetchQuota && !quotaInFlight) {
+        quotaInFlight = (async () => {
+            try {
+                const snapshot = await getAggregatedQuota()
+                lastQuotaSnapshot = snapshot
+                lastQuotaAt = Date.now()
+                return snapshot
+            } catch {
+                return null
+            } finally {
+                quotaInFlight = null
+            }
+        })()
+    }
+
+    if (quotaInFlight) {
+        const quotaResult = await settleWithTimeout(quotaInFlight, QUOTA_TIMEOUT_MS)
+        if (quotaResult.ok && quotaResult.value) {
+            quota = quotaResult.value
+        } else {
+            quota = lastQuotaSnapshot
+        }
+    } else {
+        quota = lastQuotaSnapshot
     }
 
     return c.json({ config: syncedConfig, accounts, models, quota })
