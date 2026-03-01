@@ -13,6 +13,7 @@ export const AVAILABLE_MODELS = [
     { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
     { id: "claude-sonnet-4-5-thinking", name: "Claude Sonnet 4.5 (Thinking)" },
     { id: "claude-opus-4-5-thinking", name: "Claude Opus 4.5 (Thinking)" },
+    { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)" },
 
     // Gemini 3 系列

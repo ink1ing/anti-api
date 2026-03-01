@@ -69,11 +69,16 @@ for item in assets:
     if name.startswith("anti-api-v") and name.endswith(".zip"):
         asset = item
         break
-if not asset:
-    sys.exit(2)
-url = asset.get("browser_download_url") or ""
 tag = data.get("tag_name") or ""
-digest = asset.get("digest") or ""
+if asset:
+    url = asset.get("browser_download_url") or ""
+    digest = asset.get("digest") or ""
+else:
+    # fallback: GitHub 自带源码 zip
+    url = data.get("zipball_url") or ""
+    digest = ""
+if not url:
+    sys.exit(2)
 print(url)
 print(tag)
 print(digest)
@@ -118,7 +123,10 @@ PY
     fi
 
     unzip -q "$ZIP_FILE" -d "$TMP_DIR" || { rm -rf "$TMP_DIR"; return 1; }
-    TOP_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name "anti-api-v*" | head -n 1)"
+    # 兼容两种目录格式：
+    #   - 自定义 asset: anti-api-v*
+    #   - GitHub zipball: ink1ing-anti-api-*（或 <owner>-<repo>-<sha>）
+    TOP_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d ! -path "$TMP_DIR" | head -n 1)"
     if [ -z "$TOP_DIR" ]; then
         echo "[错误] 解压后的目录结构不符合预期"
         rm -rf "$TMP_DIR"
@@ -134,14 +142,6 @@ PY
             "$TOP_DIR"/ "$PWD"/
     else
         cp -R "$TOP_DIR"/. "$PWD"/
-    fi
-
-    if [ -f "$TOP_DIR/anti-api-start.command" ]; then
-        cp "$TOP_DIR/anti-api-start.command" "$PWD/start.command"
-        chmod +x "$PWD/start.command" 2>/dev/null || true
-    fi
-    if [ -f "$TOP_DIR/anti-api-start.bat" ]; then
-        cp "$TOP_DIR/anti-api-start.bat" "$PWD/start.bat"
     fi
 
     rm -rf "$TMP_DIR"

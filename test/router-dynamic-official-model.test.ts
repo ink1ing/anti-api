@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from "bun:test"
+import { afterAll, afterEach, expect, mock, test } from "bun:test"
 import { clearDynamicCopilotModels, setDynamicCopilotModels } from "~/services/routing/models"
 
 mock.module("~/services/routing/config", () => ({
@@ -28,6 +28,8 @@ mock.module("~/services/antigravity/account-manager", () => ({
 
 mock.module("~/services/codex/chat", () => ({
     createCodexCompletion: async () => ({ contentBlocks: [], stopReason: "end_turn", usage: {} }),
+    isCodexModelSupportedForAccount: () => undefined,
+    isCodexUnsupportedModelError: () => false,
 }))
 
 mock.module("~/services/copilot/chat", () => ({
@@ -46,6 +48,10 @@ mock.module("~/services/auth/store", () => ({
 
 afterEach(() => {
     clearDynamicCopilotModels()
+})
+
+afterAll(() => {
+    mock.restore()
 })
 
 test("dynamic copilot model is treated as official model by router", async () => {

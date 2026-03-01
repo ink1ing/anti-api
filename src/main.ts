@@ -15,6 +15,7 @@ import { initAuth, isAuthenticated, saveAuth, startOAuthLogin } from "./services
 import { getProjectID } from "./services/antigravity/oauth"
 import { accountManager } from "./services/antigravity/account-manager"
 import { getSetting } from "./services/settings"
+import { logoutIdeSession, getIdeAuthStatus } from "./services/antigravity/ide-switch"
 
 /**
  * 打开浏览器
@@ -66,7 +67,6 @@ const start = defineCommand({
         },
     },
     async run({ args }) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
         state.port = parseInt(args.port, 10)
         state.verbose = args.verbose
 
@@ -322,12 +322,45 @@ API 端点: ${tunnelUrl}/v1/messages
     },
 })
 
+// IDE 登出命令
+const logoutIde = defineCommand({
+    meta: {
+        name: "logout-ide",
+        description: "登出 Antigravity IDE 当前账号（关闭 IDE + 清除认证）",
+    },
+    args: {},
+    async run() {
+        // 显示当前 IDE 登录状态
+        const current = getIdeAuthStatus()
+        if (current.loggedIn) {
+            consola.info(`Current IDE account: ${current.email} (${current.name})`)
+        } else {
+            consola.info("IDE is not logged in")
+        }
+
+        const result = await logoutIdeSession()
+
+        if (!result.success) {
+            consola.error(`Logout failed: ${result.error}`)
+            process.exit(1)
+        }
+
+        if (result.previousEmail) {
+            consola.success(`Logged out: ${result.previousEmail}`)
+        } else {
+            consola.success("IDE session cleared")
+        }
+
+        consola.info("Open Antigravity manually to sign in with a different account.")
+    },
+})
+
 const main = defineCommand({
     meta: {
         name: "anti-api",
         description: "Antigravity API Proxy - 将Antigravity内置大模型暴露为Anthropic兼容API",
     },
-    subCommands: { start, remote, "add-account": addAccount, accounts: listAccounts },
+    subCommands: { start, remote, "add-account": addAccount, accounts: listAccounts, "logout-ide": logoutIde },
 })
 
 await runMain(main)

@@ -148,10 +148,12 @@ const MODEL_MAPPING: Record<string, string> = {
     "claude-sonnet-4-5": "claude-sonnet-4-5",
     "claude-sonnet-4-5-thinking": "claude-sonnet-4-5-thinking",
     "claude-opus-4-5-thinking": "claude-opus-4-5-thinking",
+    "claude-opus-4-6": "claude-opus-4-6-thinking",
     "claude-opus-4-6-thinking": "claude-opus-4-6-thinking",
     "claude-sonnet-4.5": "claude-sonnet-4-5",
     "claude-sonnet-4.5-thinking": "claude-sonnet-4-5-thinking",
     "claude-opus-4.5-thinking": "claude-opus-4-5-thinking",
+    "claude-opus-4.6": "claude-opus-4-6-thinking",
     "claude-opus-4.6-thinking": "claude-opus-4-6-thinking",
     "claude-sonnet-4-5-20251001": "claude-sonnet-4-5",
     "gemini-3-pro-high": "gemini-3-pro-high",
@@ -508,7 +510,61 @@ function parseApiResponse(rawResponse: string): ChatResponse {
 
 // 429 is handled separately - it's account-specific, not endpoint-specific
 function shouldTryNextEndpoint(statusCode: number): boolean {
-    return statusCode === 408 || statusCode === 404 || statusCode >= 500
+    return statusCode === 403 || statusCode === 408 || statusCode === 404 || statusCode >= 500
+}
+
+function getRetryableErrorPriority(statusCode: number): number {
+    if (statusCode === 529) return 70
+    if (statusCode >= 500) return 60
+    if (statusCode === 429) return 50
+    if (statusCode === 403) return 45
+    if (statusCode === 408) return 40
+    if (statusCode === 404) return 10
+    return 0
+}
+
+function shouldPreferRetryableError(nextStatus: number, currentStatus: number): boolean {
+    return getRetryableErrorPriority(nextStatus) > getRetryableErrorPriority(currentStatus)
+}
+
+function extractMissingProjectId(errorText: string): string | null {
+    const body = (errorText || "").trim()
+    if (!body) return null
+    if (!(body.startsWith("{") || body.startsWith("["))) return null
+    try {
+        const json = JSON.parse(body)
+        const details = json?.error?.details
+        if (!Array.isArray(details)) return null
+        for (const detail of details) {
+            const resourceName = String(detail?.resourceName || "")
+            const match = resourceName.match(/^projects\/([^/]+)$/)
+            if (match?.[1]) return match[1]
+        }
+    } catch {
+        return null
+    }
+    return null
+}
+
+async function refreshProjectFrom404(
+    accountId: string | undefined,
+    currentAccessToken: string,
+    antigravityRequest: any,
+    errorText: string
+): Promise<boolean> {
+    if (!accountId) return false
+    const missingProjectId = extractMissingProjectId(errorText)
+    if (!missingProjectId) return false
+
+    try {
+        const refreshedProjectId = await accountManager.refreshProjectId(accountId, currentAccessToken)
+        if (!refreshedProjectId) return false
+        antigravityRequest.project = refreshedProjectId
+        consola.warn(`[Antigravity] Refreshed project for ${accountId}: ${missingProjectId} -> ${refreshedProjectId}`)
+        return true
+    } catch {
+        return false
+    }
 }
 
 async function sendRequestSse(
@@ -525,9 +581,13 @@ async function sendRequestSse(
     let lastStatusCode = 0
     let lastErrorText = ""
     let lastRetryAfterHeader: string | undefined
+    let preferredRetryStatusCode = 0
+    let preferredRetryErrorText = ""
+    let preferredRetryAfterHeader: string | undefined
     let currentAccessToken = accessToken
     let currentAccountId = accountId
     let nonQuota429Count = 0
+    const projectRefreshAttempts = new Set<string>()
 
     const rotationBudget = allowRotation ? Math.max(0, accountManager.count() - 1) : 0
     const maxAttempts = Math.max(MAX_RETRY_ATTEMPTS, MAX_NON_QUOTA_429_RETRIES + 1 + rotationBudget)
@@ -569,6 +629,15 @@ async function sendRequestSse(
                 lastRetryAfterHeader = response.headers.get("retry-after") || undefined
                 lastErrorText = await response.text()
                 consola.warn("SSE error " + response.status, lastErrorText.substring(0, 200))
+
+                if (response.status === 404 && currentAccountId && !projectRefreshAttempts.has(currentAccountId)) {
+                    projectRefreshAttempts.add(currentAccountId)
+                    const refreshed = await refreshProjectFrom404(currentAccountId, currentAccessToken, antigravityRequest, lastErrorText)
+                    if (refreshed) {
+                        lastError = new Error("404 - project refreshed")
+                        break
+                    }
+                }
 
                 if (lastStatusCode === 429 && currentAccountId) {
                     const quotaExhausted = isQuotaExhaustedErrorText(lastErrorText)
@@ -672,6 +741,11 @@ async function sendRequestSse(
                 }
 
                 if (shouldTryNextEndpoint(lastStatusCode)) {
+                    if (shouldPreferRetryableError(lastStatusCode, preferredRetryStatusCode)) {
+                        preferredRetryStatusCode = lastStatusCode
+                        preferredRetryErrorText = lastErrorText
+                        preferredRetryAfterHeader = lastRetryAfterHeader
+                    }
                     lastError = new Error("SSE API error: " + response.status)
                     continue
                 }
@@ -689,7 +763,8 @@ async function sendRequestSse(
         if (lastError?.message === "429 - switched account" ||
             lastError?.message === "429 - waited and retry" ||
             lastError?.message === "401 - token refreshed" ||
-            lastError?.message === "401 - switched account") {
+            lastError?.message === "401 - switched account" ||
+            lastError?.message === "404 - project refreshed") {
             continue
         }
 
@@ -699,6 +774,9 @@ async function sendRequestSse(
             if (attempt < MAX_RETRY_ATTEMPTS - 1) continue
         }
         break
+    }
+    if (preferredRetryStatusCode > 0) {
+        throw new UpstreamError("antigravity", preferredRetryStatusCode, preferredRetryErrorText, preferredRetryAfterHeader)
     }
     if (lastStatusCode > 0) {
         throw new UpstreamError("antigravity", lastStatusCode, lastErrorText, lastRetryAfterHeader)
@@ -727,6 +805,10 @@ async function* sendRequestSseStreaming(
     let currentAccessToken = accessToken
     let currentAccountId = accountId
     let nonQuota429Count = 0
+    const projectRefreshAttempts = new Set<string>()
+    let preferredRetryStatusCode = 0
+    let preferredRetryErrorText = ""
+    let preferredRetryAfterHeader: string | undefined
     const rotationBudget = allowRotation ? Math.max(0, accountManager.count() - 1) : 0
     const maxAttempts = MAX_NON_QUOTA_429_RETRIES + 1 + rotationBudget
 
@@ -755,6 +837,14 @@ async function* sendRequestSseStreaming(
 
                 if (!response.ok) {
                     const errorText = await response.text()
+                    if (response.status === 404 && currentAccountId && !projectRefreshAttempts.has(currentAccountId)) {
+                        projectRefreshAttempts.add(currentAccountId)
+                        const refreshed = await refreshProjectFrom404(currentAccountId, currentAccessToken, antigravityRequest, errorText)
+                        if (refreshed) {
+                            retryAttempt = true
+                            break
+                        }
+                    }
                     if (response.status === 429 && currentAccountId) {
                         const quotaExhausted = isQuotaExhaustedErrorText(errorText)
                         if (quotaExhausted) {
@@ -793,6 +883,11 @@ async function* sendRequestSseStreaming(
                         throw upstream
                     }
                     if (shouldTryNextEndpoint(response.status)) {
+                        if (shouldPreferRetryableError(response.status, preferredRetryStatusCode)) {
+                            preferredRetryStatusCode = response.status
+                            preferredRetryErrorText = errorText
+                            preferredRetryAfterHeader = response.headers.get("retry-after") || undefined
+                        }
                         lastError = new UpstreamError("antigravity", response.status, errorText, response.headers.get("retry-after") || undefined)
                         continue
                     }
@@ -916,6 +1011,9 @@ async function* sendRequestSseStreaming(
         }
     }
 
+    if (preferredRetryStatusCode > 0) {
+        throw new UpstreamError("antigravity", preferredRetryStatusCode, preferredRetryErrorText, preferredRetryAfterHeader)
+    }
     if (lastError) {
         throw lastError
     }
@@ -992,9 +1090,6 @@ export async function createChatCompletionWithOptions(
             accountEmail = state.userEmail || undefined
         }
     }
-
-    // Set log context for request logging
-    setRequestLogContext({ model: request.model, provider: "antigravity", account: accountEmail, routeTag: options.routeTag })
 
     setRequestLogContext({ model: request.model, provider: "antigravity", account: accountEmail, routeTag: options.routeTag })
 

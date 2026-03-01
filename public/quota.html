@@ -365,6 +365,12 @@
                 </div>
                 <div class="flex flex-col items-end gap-2">
                     <div class="flex items-center gap-3">
+                        <div class="refresh-btn inline-block">
+                            <button onclick="openIdeLogoutModal()" id="ide-logout-btn"
+                                class="px-4 py-1.5 rounded-lg font-bold text-gray-300 text-sm">
+                                Log IDE Out
+                            </button>
+                        </div>
                         <div class="refresh-btn inline-block" id="add-account-container">
                             <button onclick="openAddAccountModal()" id="add-account-btn"
                                 class="px-4 py-1.5 rounded-lg font-bold text-gray-300 text-sm">
@@ -652,6 +658,7 @@
             <div class="mt-6 text-gray-600 text-xs">
                 Settings are saved to ~/.anti-api/settings.json. Click Save to apply changes.
             </div>
+
         </div>
 
         <!-- Footer -->
@@ -659,6 +666,47 @@
             © 2025 <a href="https://github.com/silas" target="_blank"
                 class="hover:text-gray-400 transition-colors">Silas</a> · <a href="https://github.com/silas/anti-api"
                 target="_blank" class="hover:text-gray-400 transition-colors">github.com/silas/anti-api</a>
+        </div>
+    </div>
+
+    <!-- IDE Logout Confirm Modal -->
+    <div id="ide-logout-modal"
+        class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50">
+        <div class="bg-[#111111] border border-[#2f253f] rounded-2xl w-full max-w-md p-6 text-gray-200">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold">Log IDE Out</h2>
+                <button onclick="closeIdeLogoutModal()" class="text-gray-500 hover:text-gray-300">✕</button>
+            </div>
+
+            <!-- IDE current status -->
+            <div id="ide-status" class="mb-4 px-4 py-3 rounded-lg bg-black/40 border border-gray-800 text-sm text-gray-400">
+                <span class="inline-block w-2 h-2 rounded-full bg-gray-600 mr-1.5 align-middle"></span>
+                Checking IDE status...
+            </div>
+
+            <div class="space-y-3 text-sm text-gray-400 mb-5">
+                <p>This will perform the following actions:</p>
+                <ol class="list-decimal list-inside space-y-1.5 text-gray-500">
+                    <li><span class="text-gray-300">Quit</span> the running Antigravity IDE (graceful shutdown via <code class="text-gray-400 text-xs bg-black/40 px-1 py-0.5 rounded">SIGTERM</code>)</li>
+                    <li><span class="text-gray-300">Clear</span> the login session from the IDE's local database</li>
+                </ol>
+                <div class="mt-3 px-3 py-2 rounded-lg border border-yellow-900/40 bg-yellow-950/20 text-yellow-500/80 text-xs">
+                    <strong>Warning:</strong> The IDE will be closed. Save your work before proceeding. Anti-API's own accounts are not affected.
+                </div>
+            </div>
+
+            <div id="ide-logout-result" class="mb-4 text-sm hidden"></div>
+
+            <div class="flex justify-end gap-3">
+                <button onclick="closeIdeLogoutModal()"
+                    class="px-4 py-2 rounded-lg border border-gray-700 text-gray-400 text-sm hover:border-gray-500 hover:text-gray-300 transition-all">
+                    Cancel
+                </button>
+                <button onclick="confirmIdeLogout()" id="ide-logout-confirm-btn"
+                    class="px-4 py-2 rounded-lg border border-cyan-700/60 text-cyan-400 font-bold text-sm hover:border-cyan-500 hover:text-cyan-300 transition-all">
+                    Confirm Logout
+                </button>
+            </div>
         </div>
     </div>
 
@@ -865,6 +913,87 @@
                 toast.classList.add('opacity-0', 'translate-x-8');
                 toast.classList.remove('opacity-100', 'translate-x-0');
             }, 2000);
+        }
+
+        // ====== IDE Logout ======
+
+        async function fetchIdeStatus() {
+            const el = document.getElementById('ide-status');
+            if (!el) return;
+            try {
+                const res = await fetch(`${API_BASE}/auth/ide/status`);
+                const data = await res.json();
+                if (data.loggedIn) {
+                    const display = window._privacyMode ? maskEmail(data.email) : data.email;
+                    el.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5 align-middle"></span>IDE logged in: <span class="font-medium text-gray-200">${display}</span>`;
+                } else {
+                    el.innerHTML = '<span class="inline-block w-2 h-2 rounded-full bg-gray-600 mr-1.5 align-middle"></span>IDE not logged in';
+                }
+            } catch {
+                el.innerHTML = '<span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 align-middle"></span>Unable to check IDE status';
+            }
+        }
+
+        function openIdeLogoutModal() {
+            const modal = document.getElementById('ide-logout-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            const resultEl = document.getElementById('ide-logout-result');
+            resultEl.classList.add('hidden');
+            resultEl.innerHTML = '';
+            const btn = document.getElementById('ide-logout-confirm-btn');
+            btn.disabled = false;
+            btn.textContent = 'Confirm Logout';
+            btn.classList.remove('opacity-50');
+            fetchIdeStatus();
+        }
+
+        function closeIdeLogoutModal() {
+            const modal = document.getElementById('ide-logout-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        async function confirmIdeLogout() {
+            const btn = document.getElementById('ide-logout-confirm-btn');
+            const resultEl = document.getElementById('ide-logout-result');
+            btn.disabled = true;
+            btn.textContent = 'Closing IDE...';
+            btn.classList.add('opacity-50');
+            resultEl.classList.add('hidden');
+
+            try {
+                const res = await fetch(`${API_BASE}/auth/ide/logout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await res.json();
+
+                resultEl.classList.remove('hidden');
+                if (data.success) {
+                    const prev = data.previousEmail ? ` (was: ${window._privacyMode ? maskEmail(data.previousEmail) : data.previousEmail})` : '';
+                    const closedNote = data.ideWasRunning ? 'IDE closed &rarr; ' : '';
+                    let msg = `<span class="text-cyan-400">${closedNote}Auth cleared${prev}.</span>`;
+                    msg += `<br><span class="text-gray-500 text-xs mt-1 block">Open Antigravity manually to sign in with a different account.</span>`;
+                    resultEl.innerHTML = msg;
+                    showSettingsToast('IDE logged out');
+                    btn.textContent = 'Done';
+                    setTimeout(fetchIdeStatus, 3000);
+                } else {
+                    resultEl.innerHTML = `<span class="text-red-400">${data.error || 'Logout failed'}</span>`;
+                    showSettingsToast(data.error || 'Logout failed', true);
+                    btn.disabled = false;
+                    btn.textContent = 'Confirm Logout';
+                    btn.classList.remove('opacity-50');
+                }
+            } catch (e) {
+                resultEl.classList.remove('hidden');
+                resultEl.innerHTML = '<span class="text-red-400">Network error</span>';
+                showSettingsToast('Network error', true);
+                btn.disabled = false;
+                btn.textContent = 'Confirm Logout';
+                btn.classList.remove('opacity-50');
+            }
         }
 
         function applySettings(settings) {
@@ -1970,6 +2099,7 @@
         refreshAll(false);
         init3DEffect();
         initSettings();
+        fetchIdeStatus();
         resumeCodexSession();
 
         // 🆕 Auto-refresh when returning from OAuth window

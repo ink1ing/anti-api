@@ -7,18 +7,239 @@ import type { ProviderAccount } from "~/services/auth/types"
 import type { ClaudeMessage, ClaudeTool } from "~/lib/translator"
 import { toOpenAIMessages, toOpenAITools } from "~/services/providers/openai-adapter"
 
-// Disable TLS certificate verification for ChatGPT backend API
-// ChatGPT.com sometimes has certificate issues with certain network configurations
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
-
 const CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
 const CHAT_COMPLETIONS_PATH = "/chat/completions"
 const RESPONSES_PATH = "/responses"
+const MODELS_PATH = "/models"
+const CODEX_MODELS_CLIENT_VERSION = process.env.ANTI_API_CODEX_MODELS_CLIENT_VERSION || "1.0.0"
+const CODEX_INSECURE_TLS = process.env.ANTI_API_CODEX_INSECURE_TLS === "1"
 const DEFAULT_FALLBACK_MODEL = process.env.CODEX_FALLBACK_MODEL || "gpt-5"
 const CODEX_MAX_RETRIES = 2
 const CODEX_RETRY_BASE_MS = 600
 const CODEX_RETRY_JITTER_MS = 300
 const CODEX_RETRY_STATUSES = new Set([429, 500, 502, 503, 504, 521, 522, 524])
+const CODEX_REASONING_EFFORTS = new Set(["low", "medium", "high"] as const)
+const CODEX_TLS_HINT = "Codex TLS certificate error. Set ANTI_API_CODEX_INSECURE_TLS=1 to bypass."
+const CODEX_MODEL_CACHE_TTL_MS = 5 * 60 * 1000
+const CODEX_UNSUPPORTED_MODEL_TTL_MS = 30 * 60 * 1000
+
+export type CodexReasoningEffort = "low" | "medium" | "high"
+
+export interface CodexModelSummary {
+    id: string
+    label: string
+}
+
+type CodexModelCacheEntry = {
+    fetchedAt: number
+    models: CodexModelSummary[]
+    ids: Set<string>
+}
+
+type CodexModelsResponse = {
+    models?: Array<{
+        slug?: string
+        display_name?: string
+        disabled?: boolean
+        model_picker_enabled?: boolean
+    }>
+}
+
+const codexModelCache = new Map<string, CodexModelCacheEntry>()
+const codexModelInFlight = new Map<string, Promise<CodexModelSummary[]>>()
+const codexUnsupportedModels = new Map<string, Map<string, number>>()
+
+export function isCodexInsecureTlsEnabled(): boolean {
+    return CODEX_INSECURE_TLS
+}
+
+function normalizeModelId(value: string): string {
+    return value.trim()
+}
+
+function cleanupUnsupportedCache(accountId: string): Map<string, number> {
+    const now = Date.now()
+    const existing = codexUnsupportedModels.get(accountId) || new Map<string, number>()
+    for (const [modelId, expiresAt] of existing.entries()) {
+        if (!expiresAt || expiresAt <= now) {
+            existing.delete(modelId)
+        }
+    }
+    if (existing.size === 0) {
+        codexUnsupportedModels.delete(accountId)
+        return new Map<string, number>()
+    }
+    codexUnsupportedModels.set(accountId, existing)
+    return existing
+}
+
+function markCodexModelUnsupported(accountId: string, modelId: string): void {
+    const normalized = normalizeModelId(modelId)
+    if (!normalized) return
+    const existing = cleanupUnsupportedCache(accountId)
+    const next = existing.size > 0 ? existing : new Map<string, number>()
+    next.set(normalized, Date.now() + CODEX_UNSUPPORTED_MODEL_TTL_MS)
+    codexUnsupportedModels.set(accountId, next)
+}
+
+function markCodexModelSupported(accountId: string, modelId: string): void {
+    const normalized = normalizeModelId(modelId)
+    if (!normalized) return
+    const existing = cleanupUnsupportedCache(accountId)
+    if (existing.size > 0 && existing.has(normalized)) {
+        existing.delete(normalized)
+        if (existing.size > 0) {
+            codexUnsupportedModels.set(accountId, existing)
+        } else {
+            codexUnsupportedModels.delete(accountId)
+        }
+    }
+    const cached = codexModelCache.get(accountId)
+    if (cached && !cached.ids.has(normalized)) {
+        cached.ids.add(normalized)
+        cached.models.push({ id: normalized, label: `Codex - ${normalized}` })
+    }
+}
+
+function getCachedCodexModels(accountId: string): CodexModelCacheEntry | null {
+    const cached = codexModelCache.get(accountId)
+    if (!cached) return null
+    if (Date.now() - cached.fetchedAt > CODEX_MODEL_CACHE_TTL_MS) {
+        codexModelCache.delete(accountId)
+        return null
+    }
+    return cached
+}
+
+function normalizeCodexModels(response: CodexModelsResponse): CodexModelSummary[] {
+    const deduped = new Map<string, CodexModelSummary>()
+    for (const model of response.models || []) {
+        const slug = typeof model?.slug === "string" ? normalizeModelId(model.slug) : ""
+        if (!slug) continue
+        if (model?.disabled === true || model?.model_picker_enabled === false) continue
+        if (deduped.has(slug)) continue
+        const displayName = typeof model?.display_name === "string" ? model.display_name.trim() : ""
+        deduped.set(slug, {
+            id: slug,
+            label: `Codex - ${displayName || slug}`,
+        })
+    }
+    return Array.from(deduped.values())
+}
+
+function getCodexModelsHeaders(accessToken: string, accountId?: string): Record<string, string> {
+    return {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+        "User-Agent": "codex_cli_rs/0.50.0 (Mac OS 26.0.1; arm64) Apple_Terminal/464",
+        "Version": CODEX_MODELS_CLIENT_VERSION,
+        ...(accountId ? { "Chatgpt-Account-Id": accountId } : {}),
+    }
+}
+
+export async function listCodexModelsForAccount(account: ProviderAccount): Promise<CodexModelSummary[]> {
+    const cached = getCachedCodexModels(account.id)
+    if (cached) {
+        return cached.models
+    }
+    const inFlight = codexModelInFlight.get(account.id)
+    if (inFlight) {
+        return inFlight
+    }
+
+    const task = (async () => {
+        const effectiveAccount = await refreshCodexAccountIfNeeded(account)
+        const url = `${CODEX_API_BASE}${MODELS_PATH}?client_version=${encodeURIComponent(CODEX_MODELS_CLIENT_VERSION)}`
+        const headers = getCodexModelsHeaders(effectiveAccount.accessToken, effectiveAccount.id)
+
+        try {
+            const response = await fetchWithOptionalTls(url, { method: "GET", headers })
+            const text = await response.text()
+            if (!response.ok) {
+                throw new UpstreamError("codex", response.status, text, response.headers.get("retry-after") || undefined)
+            }
+            const parsed = (text ? JSON.parse(text) : {}) as CodexModelsResponse
+            const models = normalizeCodexModels(parsed)
+            const ids = new Set(models.map(model => model.id))
+            codexModelCache.set(account.id, { fetchedAt: Date.now(), models, ids })
+            if (ids.size > 0) {
+                const unsupported = cleanupUnsupportedCache(account.id)
+                for (const modelId of ids) {
+                    if (unsupported.has(modelId)) unsupported.delete(modelId)
+                }
+                if (unsupported.size > 0) codexUnsupportedModels.set(account.id, unsupported)
+            }
+            return models
+        } catch (error) {
+            if (!CODEX_INSECURE_TLS && isCertificateError(error)) {
+                throw new Error(CODEX_TLS_HINT)
+            }
+            if (CODEX_INSECURE_TLS && shouldRetryInsecure(error)) {
+                const insecure = await fetchInsecureJson(url, { method: "GET", headers })
+                if (insecure.status < 200 || insecure.status >= 300) {
+                    throw new UpstreamError("codex", insecure.status, insecure.text)
+                }
+                const parsed = (insecure.data || {}) as CodexModelsResponse
+                const models = normalizeCodexModels(parsed)
+                const ids = new Set(models.map(model => model.id))
+                codexModelCache.set(account.id, { fetchedAt: Date.now(), models, ids })
+                return models
+            }
+            throw error
+        }
+    })()
+
+    codexModelInFlight.set(account.id, task)
+    try {
+        return await task
+    } finally {
+        codexModelInFlight.delete(account.id)
+    }
+}
+
+export function isCodexModelSupportedForAccount(accountId: string, modelId: string): boolean | undefined {
+    const normalized = normalizeModelId(modelId)
+    if (!normalized) return undefined
+    const unsupported = cleanupUnsupportedCache(accountId)
+    if (unsupported.has(normalized)) {
+        return false
+    }
+    const cached = getCachedCodexModels(accountId)
+    if (!cached) return undefined
+    return cached.ids.has(normalized)
+}
+
+export function isCodexUnsupportedModelError(error: UpstreamError): boolean {
+    if (error.status !== 400 && error.status !== 404) return false
+    const body = (error.body || "").toLowerCase()
+    if (!body) return false
+    return (
+        body.includes("model is not supported") ||
+        body.includes("you do not have access") ||
+        body.includes("does not exist") ||
+        body.includes("unsupported model") ||
+        body.includes("not available for this account") ||
+        body.includes("is not available")
+    )
+}
+
+function normalizeReasoningEffort(value: unknown): CodexReasoningEffort | undefined {
+    if (typeof value !== "string") return undefined
+    const normalized = value.trim().toLowerCase()
+    if (CODEX_REASONING_EFFORTS.has(normalized as CodexReasoningEffort)) {
+        return normalized as CodexReasoningEffort
+    }
+    return undefined
+}
+
+function getDefaultReasoningEffort(): CodexReasoningEffort {
+    const fromEnv = normalizeReasoningEffort(process.env.ANTI_API_CODEX_REASONING_EFFORT)
+    return fromEnv || "medium"
+}
+
+function resolveReasoningEffort(override?: CodexReasoningEffort): CodexReasoningEffort {
+    return normalizeReasoningEffort(override) || getDefaultReasoningEffort()
+}
 
 // Codex-specific headers matching CLIProxyAPI
 function getCodexHeaders(accessToken: string, accountId?: string): Record<string, string> {
@@ -101,6 +322,9 @@ async function fetchInsecureJson(
     url: string,
     options: { method?: string; headers?: Record<string, string>; body?: string }
 ): Promise<InsecureResponse> {
+    if (!CODEX_INSECURE_TLS) {
+        throw new Error(CODEX_TLS_HINT)
+    }
     const bunFetch = (globalThis as { Bun?: { fetch?: typeof fetch } }).Bun?.fetch
     if (bunFetch) {
         const response = await bunFetch(url, {
@@ -180,11 +404,7 @@ async function fetchInsecureJson(
 async function fetchWithOptionalTls(url: string, options: FetchOptions) {
     const bunFetch = (globalThis as { Bun?: { fetch?: typeof fetch } }).Bun?.fetch
     if (bunFetch) {
-        // Always disable TLS verification for ChatGPT backend to avoid certificate errors
-        const isChatGPT = url.includes("chatgpt.com")
-        const tls = (process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0" || isChatGPT)
-            ? { rejectUnauthorized: false }
-            : undefined
+        const tls = CODEX_INSECURE_TLS ? { rejectUnauthorized: false } : undefined
         return bunFetch(url, {
             method: options.method,
             headers: options.headers,
@@ -459,7 +679,10 @@ async function requestChatCompletion(
             return { completion: data, model }
         } catch (error) {
             lastError = error
-            if (shouldRetryInsecure(error)) {
+            if (!CODEX_INSECURE_TLS && isCertificateError(error)) {
+                throw new Error(CODEX_TLS_HINT)
+            }
+            if (CODEX_INSECURE_TLS && shouldRetryInsecure(error)) {
                 if (isCertificateError(error)) {
                     consola.warn("Codex TLS error detected, retrying with insecure agent")
                 } else {
@@ -498,7 +721,8 @@ async function requestResponsesCompletion(
     model: string,
     messages: ClaudeMessage[],
     tools?: ClaudeTool[],
-    maxTokens?: number
+    maxTokens?: number,
+    reasoningEffort?: CodexReasoningEffort
 ): Promise<{ completion: OpenAIResponse; model: string }> {
     // CLIProxyAPI format: Codex Responses API requires specific fields
     // Extract system message as instructions, or use default
@@ -526,7 +750,7 @@ async function requestResponsesCompletion(
         stream: true,
         store: false,
         parallel_tool_calls: true,
-        "reasoning": { "effort": "medium", "summary": "auto" },
+        "reasoning": { "effort": resolveReasoningEffort(reasoningEffort), "summary": "auto" },
         include: ["reasoning.encrypted_content"],
     }
     const url = `${CODEX_API_BASE}${RESPONSES_PATH}`
@@ -534,26 +758,56 @@ async function requestResponsesCompletion(
 
     let lastError: unknown
     for (let attempt = 0; attempt <= CODEX_MAX_RETRIES; attempt++) {
-        // Always use insecure fetch for ChatGPT backend to avoid certificate errors
-        const insecure = await fetchInsecureJson(url, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(requestBody),
-        })
+        try {
+            const response = await fetchWithOptionalTls(url, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(requestBody),
+            })
+            const text = await response.text()
 
-        if (insecure.status < 200 || insecure.status >= 300) {
-            lastError = new UpstreamError("codex", insecure.status, insecure.text)
-            if (isRetryableStatus(insecure.status) && attempt < CODEX_MAX_RETRIES) {
+            if (!response.ok) {
+                lastError = new UpstreamError("codex", response.status, text, response.headers.get("retry-after") || undefined)
+                if (isRetryableStatus(response.status) && attempt < CODEX_MAX_RETRIES) {
+                    await sleep(getRetryDelay(attempt))
+                    continue
+                }
+                consola.error(`Codex error ${response.status}:`, text.slice(0, 500))
+                throw lastError
+            }
+
+            // Parse SSE response (ChatGPT backend returns SSE stream format)
+            const data = parseCodexSSEResponse(text)
+            return { completion: buildCompletionFromResponses(data), model }
+        } catch (error) {
+            lastError = error
+            if (!CODEX_INSECURE_TLS && isCertificateError(error)) {
+                throw new Error(CODEX_TLS_HINT)
+            }
+            if (CODEX_INSECURE_TLS && shouldRetryInsecure(error)) {
+                const insecure = await fetchInsecureJson(url, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(requestBody),
+                })
+                if (insecure.status < 200 || insecure.status >= 300) {
+                    lastError = new UpstreamError("codex", insecure.status, insecure.text)
+                    if (isRetryableStatus(insecure.status) && attempt < CODEX_MAX_RETRIES) {
+                        await sleep(getRetryDelay(attempt))
+                        continue
+                    }
+                    consola.error(`Codex error ${insecure.status}:`, insecure.text.slice(0, 500))
+                    throw lastError
+                }
+                const data = parseCodexSSEResponse(insecure.text)
+                return { completion: buildCompletionFromResponses(data), model }
+            }
+            if (attempt < CODEX_MAX_RETRIES) {
                 await sleep(getRetryDelay(attempt))
                 continue
             }
-            consola.error(`Codex error ${insecure.status}:`, insecure.text.slice(0, 500))
-            throw lastError
+            throw error
         }
-
-        // Parse SSE response (ChatGPT backend returns SSE stream format)
-        const data = parseCodexSSEResponse(insecure.text)
-        return { completion: buildCompletionFromResponses(data), model }
     }
 
     throw lastError || new UpstreamError("codex", 500, "Codex request failed")
@@ -564,7 +818,8 @@ export async function createCodexCompletion(
     model: string,
     messages: ClaudeMessage[],
     tools?: ClaudeTool[],
-    maxTokens?: number
+    maxTokens?: number,
+    reasoningEffort?: CodexReasoningEffort
 ) {
     const effectiveAccount = await refreshCodexAccountIfNeeded(account)
 
@@ -574,12 +829,21 @@ export async function createCodexCompletion(
     let lastError: unknown
 
     const attempt = async (targetModel: string): Promise<OpenAIResponse> => {
-        if (shouldUseResponses(targetModel)) {
-            const result = await requestResponsesCompletion(effectiveAccount, targetModel, messages, tools, maxTokens)
+        try {
+            if (shouldUseResponses(targetModel)) {
+                const result = await requestResponsesCompletion(effectiveAccount, targetModel, messages, tools, maxTokens, reasoningEffort)
+                markCodexModelSupported(effectiveAccount.id, targetModel)
+                return result.completion
+            }
+            const result = await requestChatCompletion(effectiveAccount, targetModel, messages, tools, maxTokens)
+            markCodexModelSupported(effectiveAccount.id, targetModel)
             return result.completion
+        } catch (error) {
+            if (error instanceof UpstreamError && isCodexUnsupportedModelError(error)) {
+                markCodexModelUnsupported(effectiveAccount.id, targetModel)
+            }
+            throw error
         }
-        const result = await requestChatCompletion(effectiveAccount, targetModel, messages, tools, maxTokens)
-        return result.completion
     }
 
     try {

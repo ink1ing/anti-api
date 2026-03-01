@@ -1,13 +1,13 @@
 {
   "name": "anti-api",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Antigravity API proxy - exposes Antigravity's built-in LLMs as Anthropic-compatible API",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/main.ts start",
     "start": "bun run src/main.ts start",
     "build": "bun build src/main.ts --outdir dist --target bun",
-    "test": "bun test"
+    "test": "bun test ./test --test-concurrency 1"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.2.3",

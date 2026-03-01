@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from "bun:test"
-import { clearDynamicCopilotModels, getProviderModels, setDynamicCopilotModels } from "~/services/routing/models"
+import { clearDynamicCodexModels, clearDynamicCopilotModels, getProviderModels, setDynamicCodexModels, setDynamicCopilotModels } from "~/services/routing/models"
 
 afterEach(() => {
     clearDynamicCopilotModels()
+    clearDynamicCodexModels()
 })
 
 test("copilot models fall back to static list when dynamic list is empty", () => {
@@ -39,4 +40,21 @@ test("dynamic copilot model options are sanitized and deduplicated", () => {
 
     expect(matches.length).toBe(1)
     expect(matches[0].label).toBe("Copilot - GPT-5.2")
+})
+
+test("codex models fall back to static list when dynamic list is empty", () => {
+    clearDynamicCodexModels()
+    const models = getProviderModels("codex")
+
+    expect(models.some(model => model.id === "gpt-5.3-codex")).toBe(true)
+})
+
+test("codex dynamic models override static list when available", () => {
+    setDynamicCodexModels([
+        { id: "gpt-5.3-codex", label: "Codex - 5.3 Codex" },
+        { id: "gpt-5.2-codex", label: "Codex - 5.2 Codex" },
+    ])
+
+    const models = getProviderModels("codex")
+    expect(models.map(model => model.id)).toEqual(["gpt-5.3-codex", "gpt-5.2-codex"])
 })

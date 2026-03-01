@@ -7,3 +7,6 @@ data/
 proj-1/
 proj-2/
 rust-proxy/target/
+anti-api-v*.zip
+anti-api-v*/
+anti-api-test-bundle/

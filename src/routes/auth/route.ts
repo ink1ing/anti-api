@@ -9,6 +9,7 @@ import { state } from "~/lib/state"
 import { authStore } from "~/services/auth/store"
 import { debugCodexOAuth, importCodexAuthSources, startCodexCliLogin, getCodexCliLoginStatus } from "~/services/codex/oauth"
 import { startCopilotDeviceFlow, pollCopilotSession, importCopilotAuthFiles } from "~/services/copilot/oauth"
+import { getIdeAuthStatus, logoutIdeSession } from "~/services/antigravity/ide-switch"
 
 export const authRouter = new Hono()
 
@@ -228,4 +229,22 @@ authRouter.get("/codex/debug", async (c) => {
 authRouter.post("/logout", (c) => {
     clearAuth()
     return c.json({ success: true, authenticated: false })
+})
+
+// ====== IDE 登出 ======
+
+// 查看 IDE 当前登录状态
+authRouter.get("/ide/status", (c) => {
+    const status = getIdeAuthStatus()
+    return c.json(status)
+})
+
+// 登出 IDE 账号（关闭 IDE + 清除认证）
+authRouter.post("/ide/logout", async (c) => {
+    try {
+        const result = await logoutIdeSession()
+        return c.json(result)
+    } catch (error) {
+        return c.json({ success: false, error: (error as Error).message }, 500)
+    }
 })

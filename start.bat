@@ -119,9 +119,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ErrorActionPreference='Stop';" ^
     "$r=Invoke-RestMethod -Uri '%API_URL%';" ^
     "$asset=$r.assets | Where-Object { $_.name -match '^anti-api-v.*\\.zip$' } | Select-Object -First 1;" ^
-    "if(-not $asset){ throw 'release asset not found' };" ^
-    "$url=$asset.browser_download_url;" ^
-    "$digest=[string]$asset.digest;" ^
+    "if($asset){ $url=$asset.browser_download_url; $digest=[string]$asset.digest } else { $url=$r.zipball_url; $digest='' };" ^
+    "if(-not $url){ throw 'no download url found' };" ^
     "$tmp=Join-Path $env:TEMP 'anti-api-update';" ^
     "Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue;" ^
     "New-Item -ItemType Directory -Path $tmp | Out-Null;" ^
@@ -129,13 +128,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing;" ^
     "if($digest -like 'sha256:*') { $expected=$digest.Substring(7).ToLowerInvariant(); $actual=(Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant(); if($actual -ne $expected){ throw 'sha256 mismatch' } };" ^
     "Expand-Archive -Path $zip -DestinationPath $tmp -Force;" ^
-    "$dir=Get-ChildItem $tmp -Directory | Where-Object { $_.Name -like 'anti-api-v*' } | Select-Object -First 1;" ^
+    "$dir=Get-ChildItem $tmp -Directory | Select-Object -First 1;" ^
     "if(-not $dir){ throw 'unzip structure invalid' };" ^
     "$src=$dir.FullName; $dst=(Get-Location).Path;" ^
     "robocopy $src $dst /E /NFL /NDL /NJH /NJS /NP /XD data node_modules .git /XF .env >$null;" ^
-    "if($LASTEXITCODE -ge 8){ throw ('robocopy failed: ' + $LASTEXITCODE) };" ^
-    "if(Test-Path (Join-Path $src 'anti-api-start.command')){ Copy-Item (Join-Path $src 'anti-api-start.command') (Join-Path $dst 'start.command') -Force };" ^
-    "if(Test-Path (Join-Path $src 'anti-api-start.bat')){ Copy-Item (Join-Path $src 'anti-api-start.bat') (Join-Path $dst 'start.bat') -Force }"
+    "if($LASTEXITCODE -ge 8){ throw ('robocopy failed: ' + $LASTEXITCODE) };"
 if %errorlevel% neq 0 (
     echo [错误] 自动更新失败
     exit /b 1

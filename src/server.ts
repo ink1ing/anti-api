@@ -25,7 +25,7 @@ import { pingAccount } from "./services/ping"
 import { summarizeUpstreamError, UpstreamError } from "./lib/error"
 import { authStore } from "./services/auth/store"
 
-import { formatLogTime, getRequestLogContext } from "./lib/logger"
+import { formatLogTime, getRequestLogContext, runWithRequestContext } from "./lib/logger"
 import { initLogCapture, setLogCaptureEnabled } from "./lib/log-buffer"
 import { getUsage, resetUsage } from "./services/usage-tracker"
 
@@ -37,31 +37,33 @@ consola.level = 0
 
 // 中间件 - 请求日志 (只记录重要请求)
 server.use(async (c, next) => {
-    await next()
-    const status = c.res.status
-    const reason = c.res.headers.get("X-Log-Reason") || undefined
+    return await runWithRequestContext(async () => {
+        await next()
+        const status = c.res.status
+        const reason = c.res.headers.get("X-Log-Reason") || undefined
 
-    // Only log errors
-    if (status >= 400) {
-        const ctx = getRequestLogContext()
-        const method = c.req.method
-        const path = c.req.path
-        const debugInfo = status === 400 ? ` (${method} ${path}${reason ? ` - ${reason}` : ""})` : ""
-        if (ctx.model && ctx.provider) {
-            const providerNames: Record<string, string> = {
-                copilot: "GitHub Copilot",
-                codex: "ChatGPT Codex",
-                antigravity: "Antigravity",
+        // Only log errors
+        if (status >= 400) {
+            const ctx = getRequestLogContext()
+            const method = c.req.method
+            const path = c.req.path
+            const debugInfo = status === 400 ? ` (${method} ${path}${reason ? ` - ${reason}` : ""})` : ""
+            if (ctx.model && ctx.provider) {
+                const providerNames: Record<string, string> = {
+                    copilot: "GitHub Copilot",
+                    codex: "ChatGPT Codex",
+                    antigravity: "Antigravity",
+                }
+                const providerName = providerNames[ctx.provider] || ctx.provider
+                const accountPart = ctx.account ? ` >> ${ctx.account}` : ""
+                const routePart = ctx.routeTag ? `•${ctx.routeTag}` : ""
+                console.log(`[${formatLogTime()}] ${status}: from ${ctx.model} > ${providerName}${accountPart}${routePart}${debugInfo}`)
+            } else {
+                console.log(`[${formatLogTime()}] ${status}: ${reason || "error"}${debugInfo}`)
             }
-            const providerName = providerNames[ctx.provider] || ctx.provider
-            const accountPart = ctx.account ? ` >> ${ctx.account}` : ""
-            const routePart = ctx.routeTag ? `•${ctx.routeTag}` : ""
-            console.log(`[${formatLogTime()}] ${status}: from ${ctx.model} > ${providerName}${accountPart}${routePart}${debugInfo}`)
-        } else {
-            console.log(`[${formatLogTime()}] ${status}: ${reason || "error"}${debugInfo}`)
         }
-    }
-    // All successful requests are silent (detailed 200 logs are handled elsewhere)
+        // All successful requests are silent (detailed 200 logs are handled elsewhere)
+    })
 })
 server.use(cors())
 
