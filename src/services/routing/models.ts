@@ -43,6 +43,10 @@ const COPILOT_STATIC_MODELS: ProviderModelOption[] = [
 
 let dynamicCopilotModels: ProviderModelOption[] = []
 let dynamicCodexModels: ProviderModelOption[] = []
+let dynamicAntigravityModels: ProviderModelOption[] = []
+const dynamicCopilotModelsByAccount = new Map<string, ProviderModelOption[]>()
+const dynamicCodexModelsByAccount = new Map<string, ProviderModelOption[]>()
+const dynamicAntigravityModelsByAccount = new Map<string, ProviderModelOption[]>()
 
 function sanitizeModelOptions(models: ProviderModelOption[], prefix: string): ProviderModelOption[] {
     const deduped = new Map<string, ProviderModelOption>()
@@ -71,12 +75,31 @@ function mergeModelOptions(...groups: ProviderModelOption[][]): ProviderModelOpt
     return Array.from(merged.values())
 }
 
+function flattenDynamicModelsByAccount(bucket: Map<string, ProviderModelOption[]>): ProviderModelOption[] {
+    return Array.from(bucket.values()).flat()
+}
+
 export function setDynamicCopilotModels(models: ProviderModelOption[]): void {
     dynamicCopilotModels = sanitizeModelOptions(models, "Copilot")
 }
 
 export function clearDynamicCopilotModels(): void {
     dynamicCopilotModels = []
+    dynamicCopilotModelsByAccount.clear()
+}
+
+export function setDynamicCopilotModelsForAccount(accountId: string, models: ProviderModelOption[]): void {
+    const id = accountId?.trim()
+    if (!id) return
+    dynamicCopilotModelsByAccount.set(id, sanitizeModelOptions(models, "Copilot"))
+}
+
+export function clearDynamicCopilotModelsForAccount(accountId: string): void {
+    dynamicCopilotModelsByAccount.delete(accountId)
+}
+
+export function clearAllDynamicCopilotModelsByAccount(): void {
+    dynamicCopilotModelsByAccount.clear()
 }
 
 export function setDynamicCodexModels(models: ProviderModelOption[]): void {
@@ -86,27 +109,107 @@ export function setDynamicCodexModels(models: ProviderModelOption[]): void {
 
 export function clearDynamicCodexModels(): void {
     dynamicCodexModels = []
+    dynamicCodexModelsByAccount.clear()
+}
+
+export function setDynamicCodexModelsForAccount(accountId: string, models: ProviderModelOption[]): void {
+    const id = accountId?.trim()
+    if (!id) return
+    const sanitized = sanitizeModelOptions(models, "Codex")
+        .filter(model => !CODEX_HIDDEN_MODELS.has(model.id))
+    dynamicCodexModelsByAccount.set(id, sanitized)
+}
+
+export function clearDynamicCodexModelsForAccount(accountId: string): void {
+    dynamicCodexModelsByAccount.delete(accountId)
+}
+
+export function clearAllDynamicCodexModelsByAccount(): void {
+    dynamicCodexModelsByAccount.clear()
+}
+
+export function setDynamicAntigravityModels(models: ProviderModelOption[]): void {
+    dynamicAntigravityModels = sanitizeModelOptions(models, "Antigravity")
+}
+
+export function clearDynamicAntigravityModels(): void {
+    dynamicAntigravityModels = []
+    dynamicAntigravityModelsByAccount.clear()
+}
+
+export function setDynamicAntigravityModelsForAccount(accountId: string, models: ProviderModelOption[]): void {
+    const id = accountId?.trim()
+    if (!id) return
+    dynamicAntigravityModelsByAccount.set(id, sanitizeModelOptions(models, "Antigravity"))
+}
+
+export function clearDynamicAntigravityModelsForAccount(accountId: string): void {
+    dynamicAntigravityModelsByAccount.delete(accountId)
+}
+
+export function clearAllDynamicAntigravityModelsByAccount(): void {
+    dynamicAntigravityModelsByAccount.clear()
 }
 
 export function getProviderModels(provider: AuthProvider): ProviderModelOption[] {
     if (provider === "antigravity") {
-        return AVAILABLE_MODELS.map(model => ({
+        const staticModels = AVAILABLE_MODELS.map(model => ({
             id: model.id,
             label: model.name,
         }))
+        return mergeModelOptions(
+            flattenDynamicModelsByAccount(dynamicAntigravityModelsByAccount),
+            dynamicAntigravityModels,
+            staticModels
+        )
     }
 
     if (provider === "copilot") {
-        return mergeModelOptions(dynamicCopilotModels, COPILOT_STATIC_MODELS)
+        return mergeModelOptions(
+            flattenDynamicModelsByAccount(dynamicCopilotModelsByAccount),
+            dynamicCopilotModels,
+            COPILOT_STATIC_MODELS
+        )
     }
 
     if (provider === "codex") {
-        if (dynamicCodexModels.length > 0) {
-            return dynamicCodexModels
+        const mergedDynamic = mergeModelOptions(
+            flattenDynamicModelsByAccount(dynamicCodexModelsByAccount),
+            dynamicCodexModels
+        )
+        if (mergedDynamic.length > 0) {
+            return mergedDynamic
         }
         return CODEX_MODELS.filter(model => !CODEX_HIDDEN_MODELS.has(model.id))
     }
 
+    return []
+}
+
+export function getProviderModelsForAccount(provider: AuthProvider, accountId: string): ProviderModelOption[] {
+    if (provider === "copilot") {
+        const dynamic = dynamicCopilotModelsByAccount.get(accountId)
+        if (dynamic && dynamic.length > 0) {
+            return mergeModelOptions(dynamic, COPILOT_STATIC_MODELS)
+        }
+        return getProviderModels(provider)
+    }
+    if (provider === "codex") {
+        const dynamic = dynamicCodexModelsByAccount.get(accountId)
+        if (dynamic && dynamic.length > 0) {
+            const staticModels = CODEX_MODELS.filter(model => !CODEX_HIDDEN_MODELS.has(model.id))
+            return mergeModelOptions(dynamic, staticModels)
+        }
+        return getProviderModels(provider)
+    }
+    if (provider === "antigravity") {
+        const dynamic = dynamicAntigravityModelsByAccount.get(accountId)
+        if (dynamic && dynamic.length > 0) {
+            const staticModels = AVAILABLE_MODELS.map(model => ({ id: model.id, label: model.name }))
+            return mergeModelOptions(dynamic, staticModels)
+        }
+        return getProviderModels(provider)
+    }
     return []
 }
 

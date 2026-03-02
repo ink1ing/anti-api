@@ -635,6 +635,7 @@
 
         let accounts = {};
         let models = {};
+        let accountModels = {};
         let flows = [];
         let flowEntries = [];
         let activeFlowId = null;
@@ -706,7 +707,7 @@
             }
         }
 
-        function collectOfficialModels(modelData) {
+        function collectOfficialModels(modelData, accountModelData) {
             const map = new Map();
             Object.values(modelData || {}).forEach(list => {
                 (list || []).forEach(model => {
@@ -715,15 +716,30 @@
                     }
                 });
             });
+            Object.values(accountModelData || {}).forEach(providerMap => {
+                Object.values(providerMap || {}).forEach(list => {
+                    (list || []).forEach(model => {
+                        if (!map.has(model.id)) {
+                            map.set(model.id, model.label || model.id);
+                        }
+                    });
+                });
+            });
             return Array.from(map.entries())
                 .map(([id, label]) => ({ id, label }))
                 .sort((a, b) => a.id.localeCompare(b.id));
         }
 
         function getProvidersForModel(modelId) {
-            return Object.entries(models)
+            const providers = new Set();
+            Object.entries(models)
                 .filter(([, list]) => (list || []).some(model => model.id === modelId))
-                .map(([provider]) => provider);
+                .forEach(([provider]) => providers.add(provider));
+            Object.entries(accountModels || {}).forEach(([provider, byAccount]) => {
+                const has = Object.values(byAccount || {}).some(list => (list || []).some(model => model.id === modelId));
+                if (has) providers.add(provider);
+            });
+            return Array.from(providers);
         }
 
         function getAccountRoute(modelId) {
@@ -939,10 +955,11 @@
             }
             accounts = data.accounts || {};
             models = data.models || {};
+            accountModels = data.accountModels || {};
             flows = Array.isArray(data.config?.flows) ? data.config.flows : [];
             quotaData = data.quota || null;
             accountRouting = data.config?.accountRouting || { smartSwitch: false, routes: [] };
-            officialModels = collectOfficialModels(models);
+            officialModels = collectOfficialModels(models, accountModels);
 
             const savedFlowId = localStorage.getItem(STORAGE_KEYS.activeFlow);
             const initialFlow = flows.find(flow => flow.id === savedFlowId) || flows[0] || null;
@@ -1127,13 +1144,15 @@
 
             PROVIDER_ORDER.forEach(provider => {
                 const providerAccounts = accounts[provider] || [];
-                const providerModels = models[provider] || [];
                 if (providerAccounts.length === 0) return;
                 totalAccounts += providerAccounts.length;
 
                 providerAccounts.forEach(account => {
                     const card = document.createElement('div');
                     card.className = 'space-y-2';
+                    const providerModels = (accountModels[provider] && accountModels[provider][account.id])
+                        || models[provider]
+                        || [];
 
                     // Get quota percentage for this account (quotaPercent = REMAINING percentage, not used)
                     const remaining = getAccountQuota(provider, account.id);

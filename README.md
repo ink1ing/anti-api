@@ -19,17 +19,37 @@
 
 > **Disclaimer**: This project is based on reverse engineering of Antigravity. Future compatibility is not guaranteed. For long-term use, avoid updating Antigravity.
 
-## What's New (v2.7.0)
+## What's New (v2.7.1)
+
+- **Per-account model fetch (Routing)** - Model lists are now fetched from each logged-in Codex/Copilot account instead of relying on static presets
+- **Antigravity fetch integration (single account)** - Routing now attempts live model fetch from the first available Antigravity account and falls back safely when unavailable
+- **Account-level model map in `/routing/config`** - Added `accountModels` so the UI can render account-specific model lists directly
+- **Routing panel model rendering update** - Account cards now show models from fetched account-level data first, then fallback models
+
+## 更新说明 (v2.7.1)
+
+- **按账号动态拉取模型（Routing）** - Codex/Copilot 的模型列表改为从每个已登录账号实时拉取，不再依赖静态预设
+- **Antigravity 拉取接入（单账号）** - Routing 会尝试用首个可用 Antigravity 账号拉取模型，失败时自动回退
+- **`/routing/config` 增加账号级模型映射** - 新增 `accountModels` 字段，前端可直接按账号渲染模型
+- **Routing 面板渲染升级** - 账号卡片优先展示账号级拉取模型，再使用兜底模型
+
+<details>
+<summary>v2.7.0</summary>
 
 - **Antigravity proxy notice** - Google has officially prohibited reverse-proxy usage of its AI services. The Antigravity reverse proxy still works for now but is **no longer recommended**
 - **Codex & Copilot unaffected** - Reverse-proxy services for Codex and GitHub Copilot remain fully functional and are not subject to the restriction above
 - **Log IDE Out** - New one-click action to sign out of the Antigravity IDE (closes the IDE, clears auth, ready for a different account)
 
-## 更新说明 (v2.7.0)
+</details>
+
+<details>
+<summary>v2.7.0 中文</summary>
 
 - **Antigravity 代理风险提示** - Google 已明确禁止对其 AI 服务进行反向代理。Antigravity 反代目前仍可用，但**不建议继续使用**
 - **Codex & Copilot 不受影响** - Codex 和 GitHub Copilot 的反代服务正常运行，不受上述限制
 - **一键登出 IDE** - 新增 Log IDE Out 功能，关闭 Antigravity IDE 并清除登录态，方便快速切换账号
+
+</details>
 
 <details>
 <summary>v2.6.2</summary>

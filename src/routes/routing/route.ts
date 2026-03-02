@@ -3,7 +3,27 @@ import consola from "consola"
 import { authStore } from "~/services/auth/store"
 import { listCopilotModelsForAccount } from "~/services/copilot/chat"
 import { listCodexModelsForAccount } from "~/services/codex/chat"
-import { clearDynamicCodexModels, clearDynamicCopilotModels, getProviderModels, setDynamicCodexModels, setDynamicCopilotModels } from "~/services/routing/models"
+import { fetchAntigravityModels } from "~/services/antigravity/quota-fetch"
+import {
+    clearAllDynamicCodexModelsByAccount,
+    clearAllDynamicCopilotModelsByAccount,
+    clearAllDynamicAntigravityModelsByAccount,
+    clearDynamicAntigravityModels,
+    clearDynamicAntigravityModelsForAccount,
+    clearDynamicCodexModels,
+    clearDynamicCodexModelsForAccount,
+    clearDynamicCopilotModels,
+    clearDynamicCopilotModelsForAccount,
+    getProviderModels,
+    getProviderModelsForAccount,
+    setDynamicAntigravityModels,
+    setDynamicAntigravityModelsForAccount,
+    setDynamicCodexModels,
+    setDynamicCodexModelsForAccount,
+    setDynamicCopilotModels,
+    setDynamicCopilotModelsForAccount,
+    type ProviderModelOption,
+} from "~/services/routing/models"
 import { loadRoutingConfig, saveRoutingConfig, setActiveFlow, type RoutingEntry, type RoutingFlow, type AccountRoutingConfig } from "~/services/routing/config"
 import { accountManager } from "~/services/antigravity/account-manager"
 import { getAggregatedQuota } from "~/services/quota-aggregator"
@@ -18,6 +38,8 @@ const COPILOT_SYNC_TTL_MS = 60_000
 const COPILOT_SYNC_TIMEOUT_MS = 800
 const CODEX_SYNC_TTL_MS = 60_000
 const CODEX_SYNC_TIMEOUT_MS = 800
+const ANTIGRAVITY_SYNC_TTL_MS = 60_000
+const ANTIGRAVITY_SYNC_TIMEOUT_MS = 800
 const QUOTA_TIMEOUT_MS = 1200
 const QUOTA_TTL_MS = 15_000
 
@@ -25,6 +47,8 @@ let lastCopilotSyncAt = 0
 let copilotSyncInFlight: Promise<void> | null = null
 let lastCodexSyncAt = 0
 let codexSyncInFlight: Promise<void> | null = null
+let lastAntigravitySyncAt = 0
+let antigravitySyncInFlight: Promise<void> | null = null
 let lastQuotaSnapshot: Awaited<ReturnType<typeof getAggregatedQuota>> | null = null
 let lastQuotaAt = 0
 let quotaInFlight: Promise<Awaited<ReturnType<typeof getAggregatedQuota>> | null> | null = null
@@ -100,6 +124,16 @@ function toSummary(account: ProviderAccount): ProviderAccountSummary {
     }
 }
 
+function normalizeRemoteModels(prefix: string, models: Array<{ id?: string; name?: string }>): ProviderModelOption[] {
+    const merged = new Map<string, ProviderModelOption>()
+    for (const model of models) {
+        const id = model.id?.trim()
+        if (!id || merged.has(id)) continue
+        merged.set(id, { id, label: `${prefix} - ${model.name?.trim() || id}` })
+    }
+    return Array.from(merged.values())
+}
+
 routingRouter.get("/", (c) => {
     try {
         const htmlPath = join(import.meta.dir, "../../../public/routing.html")
@@ -126,29 +160,30 @@ routingRouter.get("/config", async (c) => {
     const now = Date.now()
     if (copilotAccounts.length === 0) {
         clearDynamicCopilotModels()
+        clearAllDynamicCopilotModelsByAccount()
         lastCopilotSyncAt = 0
     } else if (now - lastCopilotSyncAt > COPILOT_SYNC_TTL_MS) {
         if (!copilotSyncInFlight) {
             lastCopilotSyncAt = now
             copilotSyncInFlight = (async () => {
-                let synced = false
+                const mergedModels = new Map<string, ProviderModelOption>()
                 try {
                     for (const account of copilotAccounts) {
                         try {
                             const remoteModels = await listCopilotModelsForAccount(account)
-                            if (remoteModels.length === 0) {
+                            const dynamicModels = normalizeRemoteModels("Copilot", remoteModels)
+                            if (dynamicModels.length === 0) {
+                                clearDynamicCopilotModelsForAccount(account.id)
                                 continue
                             }
-                            const dynamicModels = remoteModels.map(model => ({
-                                id: model.id,
-                                label: `Copilot - ${model.name?.trim() || model.id}`,
-                            }))
-                            setDynamicCopilotModels(dynamicModels)
+                            setDynamicCopilotModelsForAccount(account.id, dynamicModels)
+                            for (const model of dynamicModels) {
+                                if (!mergedModels.has(model.id)) mergedModels.set(model.id, model)
+                            }
                             consola.debug(`[routing] Copilot models synced (${dynamicModels.length}) from ${account.id}`)
-                            synced = true
-                            break
                         } catch (error) {
                             const message = error instanceof Error ? error.message : String(error)
+                            clearDynamicCopilotModelsForAccount(account.id)
                             consola.debug(`[routing] Copilot models sync skipped ${account.id}: ${message}`)
                         }
                     }
@@ -156,7 +191,9 @@ routingRouter.get("/config", async (c) => {
                     const message = error instanceof Error ? error.message : String(error)
                     consola.warn(`[routing] Copilot models sync failed: ${message}`)
                 } finally {
-                    if (!synced) {
+                    if (mergedModels.size > 0) {
+                        setDynamicCopilotModels(Array.from(mergedModels.values()))
+                    } else {
                         clearDynamicCopilotModels()
                         consola.debug("[routing] Copilot models sync unavailable; using static fallback")
                     }
@@ -168,25 +205,29 @@ routingRouter.get("/config", async (c) => {
 
     if (codexAccounts.length === 0) {
         clearDynamicCodexModels()
+        clearAllDynamicCodexModelsByAccount()
         lastCodexSyncAt = 0
     } else if (now - lastCodexSyncAt > CODEX_SYNC_TTL_MS) {
         if (!codexSyncInFlight) {
             lastCodexSyncAt = now
             codexSyncInFlight = (async () => {
-                let synced = false
+                const mergedModels = new Map<string, ProviderModelOption>()
                 try {
                     for (const account of codexAccounts) {
                         try {
                             const remoteModels = await listCodexModelsForAccount(account)
                             if (remoteModels.length === 0) {
+                                clearDynamicCodexModelsForAccount(account.id)
                                 continue
                             }
-                            setDynamicCodexModels(remoteModels)
+                            setDynamicCodexModelsForAccount(account.id, remoteModels)
+                            for (const model of remoteModels) {
+                                if (!mergedModels.has(model.id)) mergedModels.set(model.id, model)
+                            }
                             consola.debug(`[routing] Codex models synced (${remoteModels.length}) from ${account.id}`)
-                            synced = true
-                            break
                         } catch (error) {
                             const message = error instanceof Error ? error.message : String(error)
+                            clearDynamicCodexModelsForAccount(account.id)
                             consola.debug(`[routing] Codex models sync skipped ${account.id}: ${message}`)
                         }
                     }
@@ -194,11 +235,60 @@ routingRouter.get("/config", async (c) => {
                     const message = error instanceof Error ? error.message : String(error)
                     consola.warn(`[routing] Codex models sync failed: ${message}`)
                 } finally {
-                    if (!synced) {
+                    if (mergedModels.size > 0) {
+                        setDynamicCodexModels(Array.from(mergedModels.values()))
+                    } else {
                         clearDynamicCodexModels()
                         consola.debug("[routing] Codex models sync unavailable; using static fallback")
                     }
                     codexSyncInFlight = null
+                }
+            })()
+        }
+    }
+
+    if (antigravityAccounts.length === 0) {
+        clearDynamicAntigravityModels()
+        clearAllDynamicAntigravityModelsByAccount()
+        lastAntigravitySyncAt = 0
+    } else if (now - lastAntigravitySyncAt > ANTIGRAVITY_SYNC_TTL_MS) {
+        if (!antigravitySyncInFlight) {
+            lastAntigravitySyncAt = now
+            antigravitySyncInFlight = (async () => {
+                const [primaryAccount] = antigravityAccounts
+                if (!primaryAccount) {
+                    clearDynamicAntigravityModels()
+                    antigravitySyncInFlight = null
+                    return
+                }
+                try {
+                    const active = await accountManager.getAccountById(primaryAccount.id)
+                    if (!active) {
+                        clearDynamicAntigravityModelsForAccount(primaryAccount.id)
+                        clearDynamicAntigravityModels()
+                        antigravitySyncInFlight = null
+                        return
+                    }
+                    const remote = await fetchAntigravityModels(active.accessToken, active.projectId)
+                    const models = Object.keys(remote.models || {}).map((id) => ({
+                        id,
+                        label: `Antigravity - ${id}`,
+                    }))
+                    if (models.length > 0) {
+                        setDynamicAntigravityModelsForAccount(primaryAccount.id, models)
+                        setDynamicAntigravityModels(models)
+                        consola.debug(`[routing] Antigravity models synced (${models.length}) from ${primaryAccount.id}`)
+                    } else {
+                        clearDynamicAntigravityModelsForAccount(primaryAccount.id)
+                        clearDynamicAntigravityModels()
+                    }
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error)
+                    clearDynamicAntigravityModelsForAccount(primaryAccount.id)
+                    clearDynamicAntigravityModels()
+                    consola.debug(`[routing] Antigravity models sync skipped ${primaryAccount.id}: ${message}`)
+                } finally {
+                    antigravitySyncInFlight = null
                 }
             })()
         }
@@ -210,6 +300,9 @@ routingRouter.get("/config", async (c) => {
     }
     if (codexSyncInFlight) {
         syncWaiters.push(settleWithTimeout(codexSyncInFlight, CODEX_SYNC_TIMEOUT_MS))
+    }
+    if (antigravitySyncInFlight) {
+        syncWaiters.push(settleWithTimeout(antigravitySyncInFlight, ANTIGRAVITY_SYNC_TIMEOUT_MS))
     }
     if (syncWaiters.length > 0) {
         await Promise.all(syncWaiters)
@@ -225,6 +318,12 @@ routingRouter.get("/config", async (c) => {
         antigravity: getProviderModels("antigravity"),
         codex: getProviderModels("codex"),
         copilot: getProviderModels("copilot"),
+    }
+
+    const accountModels = {
+        antigravity: Object.fromEntries(antigravityAccounts.map(account => [account.id, getProviderModelsForAccount("antigravity", account.id)])),
+        codex: Object.fromEntries(codexAccounts.map(account => [account.id, getProviderModelsForAccount("codex", account.id)])),
+        copilot: Object.fromEntries(copilotAccounts.map(account => [account.id, getProviderModelsForAccount("copilot", account.id)])),
     }
 
     // Get quota data for displaying on model blocks
@@ -256,7 +355,7 @@ routingRouter.get("/config", async (c) => {
         quota = lastQuotaSnapshot
     }
 
-    return c.json({ config: syncedConfig, accounts, models, quota })
+    return c.json({ config: syncedConfig, accounts, models, accountModels, quota })
 })
 
 routingRouter.post("/config", async (c) => {
