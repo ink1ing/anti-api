@@ -27,14 +27,6 @@
 - **Zed quota widget updated** - The Zed card now shows shared all-model support status and billing-period timing instead of misleading remaining-credit percentages
 - **Zed stability hardening** - Added request timeouts and success-state recovery for Zed account fetch, model sync, and completion requests
 
-## 更新说明 (v2.8.0)
-
-- **新增 Zed 托管模型支持** - Anti-API 现在可以导入当前 Zed.app 的登录态，并将请求路由到 Zed 提供的模型
-- **按账号动态拉取模型** - Routing 会从每个可用的 Codex 和 Copilot 账号实时拉取模型，并加入 Zed 的账号级模型同步
-- **明确 Zed 账号边界** - Zed 账号可以逐个导入并保存在 Anti-API 中，但不能像 Codex/Copilot 一样自动批量发现
-- **更新 Zed 配额卡片** - Zed 卡片改为展示共享的 all models 支持状态和订阅周期时间，不再用误导性的剩余额度百分比
-- **增强 Zed 稳定性** - 为 Zed 的账号读取、模型同步和 completion 请求增加了超时控制与成功后状态恢复
-
 <details>
 <summary>v2.7.1</summary>
 
@@ -42,16 +34,6 @@
 - **Antigravity fetch integration (single account)** - Routing now attempts live model fetch from the first available Antigravity account and falls back safely when unavailable
 - **Account-level model map in `/routing/config`** - Added `accountModels` so the UI can render account-specific model lists directly
 - **Routing panel model rendering update** - Account cards now show models from fetched account-level data first, then fallback models
-
-</details>
-
-<details>
-<summary>v2.7.1 中文</summary>
-
-- **按账号动态拉取模型（Routing）** - Codex/Copilot 的模型列表改为从每个已登录账号实时拉取，不再依赖静态预设
-- **Antigravity 拉取接入（单账号）** - Routing 会尝试用首个可用 Antigravity 账号拉取模型，失败时自动回退
-- **`/routing/config` 增加账号级模型映射** - 新增 `accountModels` 字段，前端可直接按账号渲染模型
-- **Routing 面板渲染升级** - 账号卡片优先展示账号级拉取模型，再使用兜底模型
 
 </details>
 
@@ -65,15 +47,6 @@
 </details>
 
 <details>
-<summary>v2.7.0 中文</summary>
-
-- **Antigravity 代理风险提示** - Google 已明确禁止对其 AI 服务进行反向代理。Antigravity 反代目前仍可用，但**不建议继续使用**
-- **Codex & Copilot 不受影响** - Codex 和 GitHub Copilot 的反代服务正常运行，不受上述限制
-- **一键登出 IDE** - 新增 Log IDE Out 功能，关闭 Antigravity IDE 并清除登录态，方便快速切换账号
-
-</details>
-
-<details>
 <summary>v2.6.2</summary>
 
 - **Per-request log context isolation** - Error logs no longer mix model/account under concurrency
@@ -82,18 +55,6 @@
 - **Routing config resilience** - Soft timeouts and caching for Copilot model sync and quota aggregation
 - **Dynamic model sync** - Routing now syncs Codex/Copilot model lists from authenticated accounts with static fallback
 - **Test baseline fixes** - `bun test ./test` avoids legacy folders; updated mocks and default settings
-
-</details>
-
-<details>
-<summary>v2.6.2 中文</summary>
-
-- **请求日志隔离** - 并发下日志不再串号，模型与账号可准确对应
-- **Copilot TLS 加固** - 默认启用证书校验；受限网络可用 `ANTI_API_COPILOT_INSECURE_TLS=1` 临时兼容
-- **Codex TLS 加固** - 默认启用证书校验；受限网络可用 `ANTI_API_CODEX_INSECURE_TLS=1` 临时兼容
-- **路由加载更稳** - Copilot 模型同步与配额聚合加入软超时与缓存
-- **动态模型同步** - 路由可从已登录账号同步 Codex/Copilot 模型并保留静态兜底
-- **测试基线修复** - `bun test ./test` 避免历史目录干扰，修复 mock 与默认设置断言
 
 </details>
 
@@ -115,15 +76,6 @@
 - **What is not supported** - Automatic bulk discovery of many Zed accounts from one machine is not available in the same way as Codex/Copilot
 - **Quota monitor behavior** - Zed hosted models share one monthly spend pool across the account. Anti-API currently shows hosted access status and billing period, not exact remaining dollar credits
 - **Credit note** - Zed plan credit depends on the plan type. For example, Zed Student is documented by Zed as including $10/month in AI token credits, while standard Pro pages may show different included credit values
-
-## Zed 账号说明
-
-- **导入方式** - 点击 `Add Account -> Zed` 时，Anti-API 会读取当前 `Zed.app` 在 macOS Keychain 中的登录态
-- **为什么和 Codex/Copilot 不同** - Zed 本地没有像 Codex/Copilot 那样可批量扫描的多账号认证文件，桌面端本质上更接近“当前单登录态”
-- **这里的多账号含义** - 你可以先在 Zed 内切换账号，再逐个导入到 Anti-API；导入后的 Zed 账号会继续保存在 Anti-API 内
-- **当前不支持的能力** - 不能像 Codex/Copilot 一样，直接从一台机器上自动批量发现多个 Zed 本地账号
-- **额度监控说明** - Zed 的 hosted models 共用同一个月度消耗池。Anti-API 当前展示的是 hosted access 状态和订阅周期，不是精确的剩余美元额度
-- **Credit 说明** - Zed 的月度 credit 取决于具体计划类型。例如 Zed Student 官方说明为每月 $10 AI token credits，而普通 Pro 页面可能显示不同额度
 
 ## Free Gemini Pro Access
 
@@ -423,23 +375,32 @@ MIT
 
 > **免责声明**：本项目基于 Antigravity 逆向开发，未来版本兼容性未知，长久使用请尽可能避免更新Antigravity。
 
-## 更新内容 (v2.5.1)
+## 更新内容 (v2.8.0)
 
-- **凭证导入导出下线说明** - 账号 JSON 凭证导入导出已在后续版本移除，不再提供该功能
-- **路由继承** - 支持直接使用当前 active flow
-- **路由刷新** - routing 页面新增刷新按钮
-- **配额稳定性** - `usage_limit_reached` 统一视为额度耗尽，触发自动切换
-- **Antigravity 兼容** - 统一 User-Agent 版本为 1.15.8，避免版本过旧拦截
-- **一键更新** - 使用 `./a --update` 或 `start.command --update` 直接覆盖更新并保留数据
+- **新增 Zed 托管模型支持** - Anti-API 现在可以导入当前 Zed.app 的登录态，并将请求路由到 Zed 提供的模型
+- **按账号动态拉取模型** - Routing 会从每个可用的 Codex 和 Copilot 账号实时拉取模型，并加入 Zed 的账号级模型同步
+- **明确 Zed 账号边界** - Zed 账号可以逐个导入并保存在 Anti-API 中，但不能像 Codex/Copilot 一样自动批量发现
+- **更新 Zed 配额卡片** - Zed 卡片改为展示共享的 all models 支持状态和订阅周期时间，不再用误导性的剩余额度百分比
+- **增强 Zed 稳定性** - 为 Zed 的账号读取、模型同步和 completion 请求增加了超时控制与成功后状态恢复
 
 ## 特性
 
 - **Flow + Account 路由** - 自定义流控制非官方模型，官方模型使用账号链
+- **四家 Provider** - Antigravity、Codex、GitHub Copilot、Zed 托管模型
 - **远程访问** - ngrok/cloudflared/localtunnel 一键设置
 - **完整面板** - 配额监控、路由配置、设置面板
 - **自动轮换** - 429 错误时切换账号
 - **双格式支持** - OpenAI 和 Anthropic API 兼容
 - **工具调用** - 支持 function calling，兼容 Claude Code
+
+## Zed 账号说明
+
+- **导入方式** - 点击 `Add Account -> Zed` 时，Anti-API 会读取当前 `Zed.app` 在 macOS Keychain 中的登录态
+- **为什么和 Codex/Copilot 不同** - Zed 本地没有像 Codex/Copilot 那样可批量扫描的多账号认证文件，桌面端本质上更接近“当前单登录态”
+- **这里的多账号含义** - 你可以先在 Zed 内切换账号，再逐个导入到 Anti-API；导入后的 Zed 账号会继续保存在 Anti-API 内
+- **当前不支持的能力** - 不能像 Codex/Copilot 一样，直接从一台机器上自动批量发现多个 Zed 本地账号
+- **额度监控说明** - Zed 的 hosted models 共用同一个月度消耗池。Anti-API 当前展示的是 hosted access 状态和订阅周期，不是精确的剩余美元额度
+- **Credit 说明** - Zed 的月度 credit 取决于具体计划类型。例如 Zed Student 官方说明为每月 $10 AI token credits，而普通 Pro 页面可能显示不同额度
 
 ## 开发规范
 
@@ -469,6 +430,9 @@ MIT
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
 │  │ Antigravity  │  │    Codex     │  │   Copilot    │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ┌──────────────┐                                        │
+│  │     Zed      │                                        │
+│  └──────────────┘                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -485,7 +449,7 @@ MIT
 
 - **负载均衡** - 将请求分发到多个账号
 - **模型专用** - 指定模型使用专用账号
-- **混合提供商** - 组合 Antigravity、Codex、Copilot
+- **混合提供商** - 组合 Antigravity、Codex、Copilot、Zed
 - **自动降级** - 账号触发 429 时自动切换下一个
 
 ### 工作流程
@@ -581,6 +545,12 @@ MIT
 Codex 推理强度支持：
 - 全局默认：`ANTI_API_CODEX_REASONING_EFFORT=low|medium|high`（默认 `medium`）
 - 单次请求（OpenAI `/v1/chat/completions`）：`reasoning_effort` 或 `reasoning.effort`
+
+### Zed Hosted Models
+| 模型 ID | 说明 |
+|---------|------|
+| 动态拉取 | 按账号从 Zed 实时同步模型列表 |
+| 共享 hosted access | 所有托管模型共用同一 hosted 状态/周期 |
 
 ## API 端点
 
