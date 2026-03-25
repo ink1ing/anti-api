@@ -135,7 +135,7 @@ bun run src/main.ts start
 
 Double-click `start.bat` to launch.
 
-WinGet packaging is prepared in this repository. After the release asset and `winget-pkgs` manifest are published, the install path will be:
+WinGet packaging is prepared in this repository. After the `winget-pkgs` submission is merged, the install path will be:
 
 ```powershell
 winget install anti-api
@@ -481,7 +481,7 @@ anti-api
 
 双击 `start.bat` 启动。
 
-仓库内已经补齐 WinGet 打包与 manifest 生成链路。待对应 release 资产和 `winget-pkgs` manifest 发布后，可直接使用：
+仓库内已经补齐 WinGet 打包与 manifest 生成链路。待 `winget-pkgs` 合并后，可直接使用：
 
 ```powershell
 winget install anti-api
@@ -490,9 +490,63 @@ anti-api
 
 安装完成后，在任意终端输入 `anti-api` 会直接启动服务。
 
+### Linux
+
+```bash
+# 安装依赖
+bun install
+
+# 启动服务（默认端口：8964）
+bun run src/main.ts start
+```
+
 ### macOS
 
 双击 `start.command` 启动。
+
+### Docker
+
+构建：
+
+```bash
+docker build -t anti-api .
+```
+
+运行：
+
+```bash
+docker run --rm -it \\
+  -p 8964:8964 \\
+  -p 51121:51121 \\
+  -e ANTI_API_DATA_DIR=/app/data \\
+  -e ANTI_API_NO_OPEN=1 \\
+  -e ANTI_API_OAUTH_NO_OPEN=1 \\
+  -v $HOME/.anti-api:/app/data \\
+  anti-api
+```
+
+Compose：
+
+```bash
+docker compose up --build
+```
+
+开发覆盖模式（不重建，直接使用本地 `src/` 与 `public/`）：
+
+```bash
+docker compose up -d --no-build
+```
+
+说明：
+- OAuth 回调使用端口 `51121`，请确保已映射该端口。
+- 如果运行在远程主机，请将 `ANTI_API_OAUTH_REDIRECT_URL` 设置为公网地址，例如 `http://YOUR_HOST:51121/oauth-callback`。
+- 挂载 `~/.anti-api` 后，Docker 会复用本地账号和路由配置。
+- 设置 `ANTI_API_NO_OPEN=1` 可避免容器内尝试自动打开浏览器。
+- 如果受限网络下 Copilot TLS 失败，可设置 `ANTI_API_COPILOT_INSECURE_TLS=1`（不建议常规使用）。
+- 如果受限网络下 Codex TLS 失败，可设置 `ANTI_API_CODEX_INSECURE_TLS=1`（不建议常规使用）。
+- 可通过 `ANTI_API_CODEX_REASONING_EFFORT=low|medium|high` 设置 Codex 默认推理强度（默认 `medium`）。
+- 如果 Docker Hub 不稳定，默认基础镜像已使用 GHCR；可用 `BUN_IMAGE=oven/bun:1.1.38` 覆盖。
+- 容器内缺少 ngrok 时会自动下载（仅 Linux）。
 
 ## 开发规范
 
