@@ -32,7 +32,7 @@ const formula = `class AntiApi < Formula
   license "MIT"
   head "https://github.com/ink1ing/anti-api.git", branch: "main"
 
-  depends_on "bun"
+  depends_on "oven-sh/bun/bun"
   depends_on "rust" => :build
 
   def install

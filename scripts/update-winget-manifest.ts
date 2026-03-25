@@ -24,6 +24,7 @@ const arch = (args.arch || "x64").toLowerCase()
 const packageIdentifier = "Ink1ing.AntiAPI"
 const packageName = "Anti-API"
 const publisher = "ink1ing"
+const manifestVersion = "1.12.0"
 const manifestRoot = resolve(repoRoot, "packaging", "winget", "manifests", "i", "Ink1ing", "AntiAPI", version)
 const zipPath = args["zip-path"] ? resolve(repoRoot, args["zip-path"]) : resolve(repoRoot, "dist", `anti-api-winget-${arch}.zip`)
 const defaultUrl = `https://github.com/ink1ing/anti-api/releases/download/v${version}/anti-api-winget-${arch}.zip`
@@ -44,7 +45,7 @@ const versionManifest = `PackageIdentifier: ${packageIdentifier}
 PackageVersion: ${version}
 DefaultLocale: en-US
 ManifestType: version
-ManifestVersion: 1.9.0
+ManifestVersion: ${manifestVersion}
 `
 
 const defaultLocaleManifest = `PackageIdentifier: ${packageIdentifier}
@@ -71,7 +72,7 @@ Tags:
 - copilot
 - zed
 ManifestType: defaultLocale
-ManifestVersion: 1.9.0
+ManifestVersion: ${manifestVersion}
 `
 
 const installerManifest = `PackageIdentifier: ${packageIdentifier}
@@ -88,7 +89,7 @@ Installers:
   InstallerUrl: ${installerUrl}
   InstallerSha256: ${sha256}
 ManifestType: installer
-ManifestVersion: 1.9.0
+ManifestVersion: ${manifestVersion}
 `
 
 await writeFile(join(manifestRoot, `${packageIdentifier}.yaml`), versionManifest, "utf8")
