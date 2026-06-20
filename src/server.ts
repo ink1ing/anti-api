@@ -22,6 +22,7 @@ import { accountManager } from "./services/antigravity/account-manager"
 import { loadRoutingConfig } from "./services/routing/config"
 import { getProviderModels } from "./services/routing/models"
 import { importCodexAuthSources, removeCodexAuthArtifacts } from "./services/codex/oauth"
+import { importGrokAuthSources } from "./services/grok/oauth"
 import { loadSettings, saveSettings } from "./services/settings"
 import { pingAccount } from "./services/ping"
 import { summarizeUpstreamError, UpstreamError } from "./lib/error"
@@ -34,7 +35,7 @@ import { getUsage, resetUsage } from "./services/usage-tracker"
 import { getPublicDir } from "./lib/public-dir"
 
 export const server = new Hono()
-const PROVIDERS: AuthProvider[] = ["antigravity", "codex", "copilot", "zed", "kiro"]
+const PROVIDERS: AuthProvider[] = ["antigravity", "codex", "copilot", "zed", "kiro", "grok"]
 
 interface ModelListEntry {
     id: string
@@ -66,6 +67,7 @@ server.use(async (c, next) => {
                     antigravity: "Antigravity",
                     zed: "Zed",
                     kiro: "Kiro",
+                    grok: "Grok",
                 }
                 const providerName = providerNames[ctx.provider] || ctx.provider
                 const accountPart = ctx.account ? ` >> ${ctx.account}` : ""
@@ -98,6 +100,15 @@ accountManager.load()
 importCodexAuthSources().then(result => {
     if (result.accounts.length > 0) {
         consola.success(`Codex: Imported ${result.accounts.length} account(s) from ${result.sources.join(", ")}`)
+    }
+}).catch(err => {
+    void err
+})
+
+// 自动导入 Grok 账户 (从 ~/.grok/auth.json，复用 Grok CLI 的会话凭证)
+importGrokAuthSources().then(result => {
+    if (result.accounts.length > 0) {
+        consola.success(`Grok: Imported ${result.accounts.length} account(s) from ${result.sources.join(", ")}`)
     }
 }).catch(err => {
     void err

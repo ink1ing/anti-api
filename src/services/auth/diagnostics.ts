@@ -23,7 +23,7 @@ export interface DiagnosticReport {
     checks: DiagnosticCheck[]
 }
 
-const PROVIDERS: AuthProvider[] = ["antigravity", "codex", "copilot", "zed", "kiro"]
+const PROVIDERS: AuthProvider[] = ["antigravity", "codex", "copilot", "zed", "kiro", "grok"]
 const COMMAND_TIMEOUT_MS = 6000
 const MAX_OUTPUT_LENGTH = 1000
 

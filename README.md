@@ -19,13 +19,22 @@
 
 > **Disclaimer**: This project is based on reverse engineering of Antigravity. Future compatibility is not guaranteed. For long-term use, avoid updating Antigravity.
 
-## What's New (v3.0.0)
+## What's New (v3.1.0)
+
+- **Grok provider support** - Added xAI Grok via the Grok CLI reverse proxy (`cli-chat-proxy.grok.com`, OpenAI Responses API), with account import, model routing, and quota-store integration alongside existing providers
+- **Two Grok models exposed** - The standard ModelName `grok-build` (shown as **Xbuild**; this maps to the actual **Grok 4.3** model, as visible inside the Grok CLI) and `grok-composer-2.5-fast` (Composer 2.5 Fast)
+- **Credential reuse** - Grok credentials are imported from the local Grok CLI session (`~/.grok/auth.json`) and auto-refreshed; chosen to reduce account-ban risk and because community needs are still undefined (no standalone login flow is added)
+
+<details>
+<summary>v3.0.0</summary>
 
 - **Kiro provider support** - Added Kiro account import, quota visibility, model routing, and reverse-proxy support alongside existing providers
 - **Dashboard i18n** - Added global Chinese support, system-language default detection, and a Settings language switch
 - **Account diagnostics assistant** - Added a localhost-only diagnostics panel for checking missing account files, CLI tools, callback ports, and provider setup
 - **Panel updates** - Added a localhost-only update checker and source-install updater, with package-manager safeguards for WinGet and Docker
 - **Docker support hardened** - Updated Docker defaults, OAuth port ranges, health checks, development compose separation, and Docker-specific update guidance
+
+</details>
 
 <details>
 <summary>v2.9.0</summary>
@@ -443,13 +452,22 @@ MIT
 
 > **免责声明**：本项目基于 Antigravity 逆向开发，未来版本兼容性未知，长久使用请尽可能避免更新Antigravity。
 
-## 更新内容 (v3.0.0)
+## 更新内容 (v3.1.0)
+
+- **新增 Grok Provider 支持** - 通过 Grok CLI 的反向代理（`cli-chat-proxy.grok.com`，OpenAI Responses API）接入 xAI Grok，包含账号导入、模型路由与配额体系集成
+- **暴露两个 Grok 模型** - 提供的标准 ModelName 是 `grok-build`（面板显示为 **Xbuild**），但其对应的实际模型是 **Grok 4.3**（可在 Grok CLI 内看到）；以及 `grok-composer-2.5-fast`（Composer 2.5 Fast）
+- **复用本地凭证** - Grok 凭证从本地 Grok CLI 会话（`~/.grok/auth.json`）导入并自动续期；选择该方式是为了降低账号被封禁的可能性，且社区的具体需求尚不确定（不新增独立登录流程）
+
+<details>
+<summary>v3.0.0</summary>
 
 - **新增 Kiro Provider 支持** - 加入 Kiro 账号导入、配额展示、模型路由和反向代理能力
 - **控制面板国际化** - 增加全局中文支持、默认跟随系统语言，并在设置页提供语言切换
 - **账号诊断助手** - 新增仅限本机访问的诊断面板，用于检查账号文件、CLI 工具、回调端口和 provider 配置
 - **面板更新能力** - 新增仅限本机访问的检查更新和源码安装一键更新，并对 WinGet、Docker 做保护提示
 - **完善 Docker 支持** - 更新 Docker 默认配置、OAuth 端口范围、健康检查、开发 compose 分离和 Docker 更新说明
+
+</details>
 
 <details>
 <summary>v2.9.0</summary>

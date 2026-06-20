@@ -89,7 +89,7 @@ async function settleWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Pro
     return result as { ok: boolean; value?: T; error?: Error; timedOut?: boolean }
 }
 
-function resolveAccountLabel(provider: "antigravity" | "codex" | "copilot" | "zed" | "kiro", accountId: string, fallback?: string): string {
+function resolveAccountLabel(provider: "antigravity" | "codex" | "copilot" | "zed" | "kiro" | "grok", accountId: string, fallback?: string): string {
     if (accountId === "auto") return "auto"
     const account = authStore.getAccount(provider, accountId)
     return account?.label || account?.email || account?.login || fallback || accountId
@@ -119,7 +119,7 @@ function syncAccountRoutingLabels(accountRouting?: AccountRoutingConfig): Accoun
     }
 }
 
-function listAccountsInOrder(provider: "antigravity" | "codex" | "copilot" | "zed" | "kiro"): ProviderAccount[] {
+function listAccountsInOrder(provider: "antigravity" | "codex" | "copilot" | "zed" | "kiro" | "grok"): ProviderAccount[] {
     let accounts: ProviderAccount[] = []
     try {
         accounts = authStore.listAccounts(provider) || []

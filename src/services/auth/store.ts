@@ -64,6 +64,7 @@ function storedTypeToProvider(type: string): AuthProvider | null {
     if (type === "codex") return "codex"
     if (type === "zed") return "zed"
     if (type === "kiro") return "kiro"
+    if (type === "grok") return "grok"
     return null
 }
 

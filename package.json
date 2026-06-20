@@ -1,6 +1,6 @@
 {
   "name": "anti-api",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Antigravity API proxy - exposes Antigravity's built-in LLMs as Anthropic-compatible API",
   "type": "module",
   "scripts": {

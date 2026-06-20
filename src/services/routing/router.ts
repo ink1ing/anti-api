@@ -6,6 +6,7 @@ import { createCodexCompletion, isCodexModelSupportedForAccount, isCodexUnsuppor
 import { createCopilotCompletion } from "~/services/copilot/chat"
 import { createZedCompletion } from "~/services/zed/chat"
 import { createKiroCompletion } from "~/services/kiro/chat"
+import { createGrokCompletion } from "~/services/grok/chat"
 import { authStore } from "~/services/auth/store"
 import type { ProviderAccount } from "~/services/auth/types"
 import { loadRoutingConfig, type RoutingEntry, type RoutingConfig, type AccountRoutingEntry } from "./config"
@@ -76,7 +77,7 @@ function isEntryUsable(entry: RoutingEntry): boolean {
 // 因此能在请求期 accountManager.load() 重置 rateLimitedUntil 后仍保住限流状态。
 // 其它 provider 的限流仅依赖 authStore.isRateLimited。
 const routerRateLimits = new Map<string, number>()  // "antigravity:accountId" -> expiry timestamp
-const PROVIDER_ORDER: AuthProvider[] = ["antigravity", "codex", "copilot", "zed", "kiro"]
+const PROVIDER_ORDER: AuthProvider[] = ["antigravity", "codex", "copilot", "zed", "kiro", "grok"]
 const flowStickyStates = new Map<string, FlowStickyState>()
 const accountStickyStates = new Map<string, AccountStickyState>()
 
@@ -495,6 +496,9 @@ async function createHostedProviderCompletion(
     }
     if (provider === "kiro") {
         return createKiroCompletion(account, model, request.messages, request.tools, request.maxTokens)
+    }
+    if (provider === "grok") {
+        return createGrokCompletion(account, model, request.messages, request.tools, request.maxTokens, request.reasoningEffort)
     }
     throw new Error("Unsupported provider")
 }

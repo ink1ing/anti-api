@@ -12,12 +12,14 @@ const PROVIDER_NAMES: Record<string, string> = {
     copilot: "GitHub Copilot",
     codex: "ChatGPT Codex",
     antigravity: "Antigravity",
+    grok: "Grok",
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
     copilot: "Copilot",
     codex: "Codex",
     antigravity: "Antigravity",
+    grok: "Grok",
 }
 
 // Request context for logging (set by router, read by middleware)

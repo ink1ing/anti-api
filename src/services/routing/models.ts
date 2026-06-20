@@ -42,6 +42,11 @@ const COPILOT_STATIC_MODELS: ProviderModelOption[] = [
 ]
 
 const ZED_STATIC_MODELS: ProviderModelOption[] = []
+// Grok：标准 ModelName grok-build 对应实际模型 Grok 4.3（对外标签 Xbuild）
+const GROK_STATIC_MODELS: ProviderModelOption[] = [
+    { id: "grok-build", label: "Xbuild" },
+    { id: "grok-composer-2.5-fast", label: "Composer 2.5" },
+]
 const KIRO_STATIC_MODELS: ProviderModelOption[] = [
     { id: "auto", label: "Kiro - Auto" },
     { id: "claude-opus-4.7", label: "Kiro - Claude Opus 4.7" },
@@ -63,11 +68,13 @@ let dynamicCodexModels: ProviderModelOption[] = []
 let dynamicAntigravityModels: ProviderModelOption[] = []
 let dynamicZedModels: ProviderModelOption[] = []
 let dynamicKiroModels: ProviderModelOption[] = []
+let dynamicGrokModels: ProviderModelOption[] = []
 const dynamicCopilotModelsByAccount = new Map<string, ProviderModelOption[]>()
 const dynamicCodexModelsByAccount = new Map<string, ProviderModelOption[]>()
 const dynamicAntigravityModelsByAccount = new Map<string, ProviderModelOption[]>()
 const dynamicZedModelsByAccount = new Map<string, ProviderModelOption[]>()
 const dynamicKiroModelsByAccount = new Map<string, ProviderModelOption[]>()
+const dynamicGrokModelsByAccount = new Map<string, ProviderModelOption[]>()
 
 function sanitizeModelOptions(models: ProviderModelOption[], prefix: string): ProviderModelOption[] {
     const deduped = new Map<string, ProviderModelOption>()
@@ -218,6 +225,29 @@ export function clearAllDynamicKiroModelsByAccount(): void {
     dynamicKiroModelsByAccount.clear()
 }
 
+export function setDynamicGrokModels(models: ProviderModelOption[]): void {
+    dynamicGrokModels = sanitizeModelOptions(models, "Grok")
+}
+
+export function clearDynamicGrokModels(): void {
+    dynamicGrokModels = []
+    dynamicGrokModelsByAccount.clear()
+}
+
+export function setDynamicGrokModelsForAccount(accountId: string, models: ProviderModelOption[]): void {
+    const id = accountId?.trim()
+    if (!id) return
+    dynamicGrokModelsByAccount.set(id, sanitizeModelOptions(models, "Grok"))
+}
+
+export function clearDynamicGrokModelsForAccount(accountId: string): void {
+    dynamicGrokModelsByAccount.delete(accountId)
+}
+
+export function clearAllDynamicGrokModelsByAccount(): void {
+    dynamicGrokModelsByAccount.clear()
+}
+
 export function getProviderModels(provider: AuthProvider): ProviderModelOption[] {
     if (provider === "antigravity") {
         const staticModels = AVAILABLE_MODELS.map(model => ({
@@ -266,6 +296,14 @@ export function getProviderModels(provider: AuthProvider): ProviderModelOption[]
         )
     }
 
+    if (provider === "grok") {
+        return mergeModelOptions(
+            flattenDynamicModelsByAccount(dynamicGrokModelsByAccount),
+            dynamicGrokModels,
+            GROK_STATIC_MODELS
+        )
+    }
+
     return []
 }
 
@@ -304,6 +342,13 @@ export function getProviderModelsForAccount(provider: AuthProvider, accountId: s
         const dynamic = dynamicKiroModelsByAccount.get(accountId)
         if (dynamic && dynamic.length > 0) {
             return mergeModelOptions(dynamic, KIRO_STATIC_MODELS)
+        }
+        return getProviderModels(provider)
+    }
+    if (provider === "grok") {
+        const dynamic = dynamicGrokModelsByAccount.get(accountId)
+        if (dynamic && dynamic.length > 0) {
+            return mergeModelOptions(dynamic, GROK_STATIC_MODELS)
         }
         return getProviderModels(provider)
     }
