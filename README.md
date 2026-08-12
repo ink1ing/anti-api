@@ -108,16 +108,6 @@
 - **Quota monitor behavior** - Zed hosted models share one monthly spend pool across the account. Anti-API currently shows hosted access status and billing period, not exact remaining dollar credits
 - **Credit note** - Zed plan credit depends on the plan type. For example, Zed Student is documented by Zed as including $10/month in AI token credits, while standard Pro pages may show different included credit values
 
-## Free Gemini Pro Access
-
-Two free methods to get one year of Gemini Pro:
-
-**Method 1: Telegram Bot (Quick and stable, one-time free)**
-https://t.me/sheeridverifier_bot
-
-**Method 2: @pastking's Public Service (Unlimited, requires learning)**
-https://batch.1key.me
-
 ## Quick Start
 
 ### Linux
