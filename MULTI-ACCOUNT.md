@@ -1,74 +1,65 @@
-# Multi-Account Setup Guide
+# Authorized Multi-Account Management
 
-## Problem
-The 429 errors occur because the free tier Google account has exhausted its daily quota (~50-100 requests/day).
+Anti-API can store more than one provider account and route requests through an account selected by the operator. Configure only accounts that you own or are explicitly authorized to administer, and only where the provider's current terms permit this integration.
 
-## Solution
-Add multiple Google accounts to automatically rotate between them when one hits the quota limit.
+## Intended Use
 
-## Quick Start
+Multi-account support is intended for:
 
-### 1. Add Additional Accounts
+- Explicit account selection for separate projects or organizations
+- Reliability failover between separately authorized service accounts
+- Isolating provider configuration and credentials
+- Waiting for an authorized account to recover after a transient upstream failure
 
-Run the built-in CLI command to add more Google accounts:
+It must not be used to create account pools, aggregate free-tier allowances, evade per-user or per-organization quotas, bypass rate limits, or circumvent provider enforcement.
+
+## Add an Authorized Account
 
 ```bash
 bun run src/main.ts add-account
 ```
 
-This will:
-- Open your browser for Google login
-- Authenticate the new account
-- Automatically add it to the rotation pool
-- Save to `~/.anti-api/accounts.json`
+The command opens the provider login flow and stores a local credential copy under `~/.anti-api`. Credential files are written with owner-only permissions where the operating system supports POSIX modes. Do not add another person's account or share credential files.
 
-Repeat this command for each additional account you want to add.
-
-### 2. Check Current Accounts
-
-The script will show all configured accounts. You can also check manually:
+## List Accounts
 
 ```bash
-cat ~/.anti-api/accounts.json
+bun run src/main.ts accounts
 ```
 
-### 3. Start the Server
+Do not print or copy the raw JSON credential files into issue reports, chat messages, or CI logs.
 
-The server will automatically use account rotation:
+## Rate Limits and Quotas
 
-```bash
-./anti-api-start.command
-# or
-bun run src/main.ts start
-```
+When an upstream returns `429`, Anti-API records a cooldown and respects an available `Retry-After` or reset signal. If all eligible accounts are cooling down, requests wait or fail rather than clearing the recorded limits.
 
-## How It Works
+A `429` can represent a short-term request-rate limit, model capacity, or an exhausted allowance. The appropriate response is to:
 
-- When a request fails with 429 (quota exhausted), the system automatically switches to the next account
-- Each account is marked as rate-limited for 60 seconds after a 429 error
-- When all accounts are rate-limited, the system waits for the earliest one to become available
-- Tokens are automatically refreshed when they expire
+1. Reduce request concurrency and frequency.
+2. Respect `Retry-After` and provider reset times.
+3. Verify that the account and organization have the required authorized quota.
+4. Contact the provider or purchase the appropriate plan when more capacity is needed.
 
-## Free Tier Limits
+Adding or creating accounts to continue after a quota limit is not a supported use.
 
-- **Free tier**: ~50-100 requests/day per account
-- **Google AI Pro**: 1,500 requests/day
-- **Quota resets**: Daily at midnight Pacific Time
+## Credential Import
 
-## Tips
+Imports from another CLI or IDE are explicit operations. Anti-API may copy access and refresh tokens into its own data directory. Automatic startup import is disabled unless the corresponding `ANTI_API_IMPORT_*` environment variable is set. External Kiro credential stores are not modified unless `ANTI_API_KIRO_WRITEBACK=1` is explicitly enabled.
 
-1. **Use multiple Google accounts** - Create 5-10 free Gmail accounts for 500-1000 requests/day total
-2. **Wait for quota reset** - If you run out temporarily, quotas reset daily
-3. **Upgrade to Google AI Pro** - Get 1,500 requests/day per account ($19.99/month)
+Deleting an account from Anti-API deletes only Anti-API's copy; it does not delete Codex CLI or CLIProxy credential files.
 
 ## Troubleshooting
 
-### All accounts showing 429
-- All accounts have exhausted their daily quota
-- Wait for quota reset (midnight PT)
-- Add more accounts
+### Every authorized account is cooling down
 
-### Account not working
-- Check if the account has Antigravity/Gemini enabled
-- Try logging into https://gemini.google.com with the account first
-- Re-run `bun run src/main.ts add-account` to add the account again
+- Stop sending requests and wait for the earliest allowed retry time.
+- Check the provider's quota dashboard and organization policy.
+- Confirm system time and proxy behavior.
+- Do not clear cooldowns or add accounts to evade the upstream limit.
+
+### An account cannot authenticate
+
+- Confirm that the account belongs to you or your organization.
+- Re-authenticate through the provider's supported login flow.
+- Install the correct enterprise certificate authority if TLS validation fails; do not disable certificate verification as a first response.
+- Remove and re-add only Anti-API's local account copy when necessary.

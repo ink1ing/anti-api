@@ -4,6 +4,7 @@
 
 import type { Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
+import { safeErrorMessage } from "./redaction"
 
 export class HTTPError extends Error {
     response: Response
@@ -125,7 +126,7 @@ export function summarizeUpstreamError(error: UpstreamError): { message: string;
         const summary = summarizeUpstream429(error)
         return { message: summary.message, reason: summary.reason }
     }
-    return { message: error.body || error.message }
+    return { message: `${error.provider} upstream error (${error.status}).` }
 }
 
 function buildLogReason(error: unknown): string {
@@ -160,19 +161,12 @@ function buildLogReason(error: unknown): string {
  */
 export async function forwardError(c: Context, error: unknown) {
     if (error instanceof HTTPError) {
-        const errorText = await error.response.text()
-        let errorJson: unknown
-        try {
-            errorJson = JSON.parse(errorText)
-        } catch {
-            errorJson = errorText
-        }
         c.header("X-Log-Reason", buildLogReason(error))
         return c.json(
             {
                 error: {
-                    type: "error",
-                    message: errorText,
+                    type: "http_error",
+                    message: `Upstream HTTP error (${error.response.status}).`,
                 },
             },
             error.response.status as ContentfulStatusCode,
@@ -202,7 +196,6 @@ export async function forwardError(c: Context, error: unknown) {
                     message: summary.message,
                     provider: error.provider,
                     ...(summary.reason ? { reason: summary.reason } : {}),
-                    ...(error.status === 429 && error.body ? { detail: error.body.slice(0, 800) } : {}),
                 },
             },
             error.status as ContentfulStatusCode,
@@ -214,7 +207,7 @@ export async function forwardError(c: Context, error: unknown) {
         {
             error: {
                 type: "error",
-                message: (error as Error).message,
+                message: safeErrorMessage(error),
             },
         },
         500,

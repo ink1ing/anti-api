@@ -1,6 +1,7 @@
 import { createHash } from "crypto"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs"
 import { getDataDir } from "~/lib/data-dir"
+import { ensurePrivateDir, writePrivateFile } from "~/lib/private-file"
 import { dirname, join, resolve } from "path"
 import Database from "better-sqlite3"
 import type { ProviderAccount } from "~/services/auth/types"
@@ -122,17 +123,14 @@ function providerToStoredType(provider: ProviderAccount["provider"]): string {
 }
 
 function ensureAuthDir(): void {
-    const authDir = getAuthDir()
-    if (!existsSync(authDir)) {
-        mkdirSync(authDir, { recursive: true })
-    }
+    ensurePrivateDir(getAuthDir())
 }
 
 function saveKiroAccount(account: ProviderAccount): void {
     ensureAuthDir()
     const now = new Date().toISOString()
     const path = join(getAuthDir(), `${providerToStoredType(account.provider)}-${sanitizeFileKey(account.id)}.json`)
-    writeFileSync(path, JSON.stringify({
+    writePrivateFile(path, JSON.stringify({
         id: account.id,
         type: providerToStoredType(account.provider),
         email: account.email,
@@ -253,6 +251,7 @@ function loadSqliteCredential(path: string, overrides: Partial<KiroCredential> =
 }
 
 function saveCredentialToSource(credential: KiroCredential): void {
+    if (process.env.ANTI_API_KIRO_WRITEBACK !== "1") return
     if (!credential.sourcePath) return
     if (credential.credentialType === "json") {
         assertNotSymlink(credential.sourcePath)

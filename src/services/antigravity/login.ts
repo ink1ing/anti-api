@@ -4,9 +4,10 @@
  */
 
 import { state } from "~/lib/state"
-import { existsSync, readFileSync, writeFileSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import { join } from "path"
 import consola from "consola"
+import { tightenPrivateFile, writePrivateFile } from "~/lib/private-file"
 import {
     startOAuthCallbackServer,
     generateState,
@@ -38,6 +39,7 @@ export function initAuth(): void {
     try {
         const source = existsSync(AUTH_FILE) ? AUTH_FILE : (existsSync(LEGACY_AUTH_FILE) ? LEGACY_AUTH_FILE : null)
         if (source) {
+            tightenPrivateFile(source)
             const data = JSON.parse(readFileSync(source, "utf-8")) as AuthData
             if (data.accessToken) {
                 state.accessToken = data.accessToken
@@ -74,7 +76,7 @@ export function saveAuth(): void {
             projectId: state.cloudaicompanionProject || undefined,
         }
 
-        writeFileSync(AUTH_FILE, JSON.stringify(data, null, 2))
+        writePrivateFile(AUTH_FILE, JSON.stringify(data, null, 2))
         consola.success("Authentication saved")
     } catch (error) {
         consola.error("Failed to save auth:", error)
@@ -94,10 +96,10 @@ export function clearAuth(): void {
 
     try {
         if (existsSync(AUTH_FILE)) {
-            writeFileSync(AUTH_FILE, "{}")
+            writePrivateFile(AUTH_FILE, "{}")
         }
         if (existsSync(LEGACY_AUTH_FILE)) {
-            writeFileSync(LEGACY_AUTH_FILE, "{}")
+            writePrivateFile(LEGACY_AUTH_FILE, "{}")
         }
     } catch (error) {
         consola.warn("Failed to clear auth file:", error)

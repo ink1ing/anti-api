@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "fs"
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "fs"
 import { join } from "path"
 import consola from "consola"
+import { ensurePrivateDir, tightenPrivateFile, writePrivateFile } from "~/lib/private-file"
 import { parseRetryDelay } from "~/lib/retry"
 import type { AuthProvider, ProviderAccount, ProviderAccountSummary } from "./types"
 import { getDataDir } from "~/lib/data-dir"
@@ -38,9 +39,7 @@ let cacheLoadedAt = 0
 let cacheDirty = true
 
 function ensureAuthDir(): void {
-    if (!existsSync(AUTH_DIR)) {
-        mkdirSync(AUTH_DIR, { recursive: true })
-    }
+    ensurePrivateDir(AUTH_DIR)
 }
 
 function sanitizeFileKey(value: string): string {
@@ -88,6 +87,7 @@ function toSummary(account: ProviderAccount): ProviderAccountSummary {
 
 function loadAccountFromFile(path: string): ProviderAccount | null {
     try {
+        tightenPrivateFile(path)
         const raw = JSON.parse(readFileSync(path, "utf-8")) as StoredAuthFile
         const provider = storedTypeToProvider(raw.type)
         if (!provider || !raw.access_token || !raw.id) {
@@ -141,7 +141,7 @@ function writeAccountFile(account: ProviderAccount): void {
         updated_at: now,
     }
 
-    writeFileSync(path, JSON.stringify(payload, null, 2))
+    writePrivateFile(path, JSON.stringify(payload, null, 2))
 }
 
 function loadAccountsFromDisk(): ProviderAccount[] {

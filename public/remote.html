@@ -195,28 +195,34 @@
         <!-- Header -->
         <div class="mb-6 remote-header">
             <h1 class="text-3xl font-bold text-gray-300" data-i18n="remote.title">Remote</h1>
-            <p class="text-gray-500 text-sm font-bold mt-1" data-i18n="remote.subtitle">Expose anti-api to external devices via ngrok tunnel</p>
+            <p class="text-gray-500 text-sm font-bold mt-1" data-i18n="remote.subtitle">Connect a protocol-compatible inference gateway through a third-party tunnel</p>
+            <p class="text-amber-500/80 text-xs mt-3" data-i18n="remote.securityNotice">ngrok is a third-party tunnel service. On the public internet, expose only a token-protected inference gateway. Never expose this dashboard or any control-plane endpoint.</p>
         </div>
 
         <!-- ngrok Card - Simplified -->
         <div class="card-3d" data-type="ngrok">
             <div class="card-inner rounded-xl p-6" id="ngrok-card">
                 <!-- Token Input Row -->
-                <div class="flex items-center gap-3 mb-6">
-                    <input type="text" id="ngrok-authtoken" placeholder="Enter ngrok authtoken"
-                        data-i18n-placeholder="remote.tokenPlaceholder"
+                <div class="flex items-center gap-3 mb-2">
+                    <input type="password" id="ngrok-authtoken" placeholder="Enter a new ngrok authtoken"
+                        data-i18n-placeholder="remote.tokenPlaceholder" autocomplete="new-password" spellcheck="false"
                         class="flex-1 px-4 py-2.5 rounded-lg text-white text-sm"
                         style="background: rgba(255,255,255,0.08); border: 1px solid rgba(55, 65, 81, 0.5);">
-                    <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank"
+                    <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank" rel="noopener noreferrer"
                         class="text-cyan-400 text-sm font-medium hover:text-cyan-300 whitespace-nowrap">
                         <span data-i18n="remote.getToken">Get Token</span> →
                     </a>
                 </div>
+                <div id="ngrok-token-status" class="text-xs text-gray-500 mb-2" data-i18n="remote.tokenNotConfigured">No saved token is configured.</div>
+                <label class="inline-flex items-center gap-2 text-xs text-gray-500 mb-6 cursor-pointer">
+                    <input type="checkbox" id="ngrok-clear-token" class="accent-red-500">
+                    <span data-i18n="remote.clearToken">Clear the saved token when starting</span>
+                </label>
 
                 <!-- Toggle Button -->
                 <div class="flex items-center gap-4 mb-6">
                     <div class="refresh-btn">
-                        <button id="ngrok-toggle" onclick="toggleTunnel()"
+                        <button id="ngrok-toggle"
                             class="px-6 py-2.5 rounded-lg font-bold text-gray-200 text-sm min-w-[100px]">
                             <span data-i18n="remote.start">Start</span>
                         </button>
@@ -227,7 +233,7 @@
                 <!-- URL Display - Large and Clickable -->
                 <div id="ngrok-url-container" class="hidden">
                     <div class="text-xs text-gray-500 mb-2" data-i18n="remote.clickToCopy">Click to copy URL:</div>
-                    <div id="ngrok-url" onclick="copyNgrokUrl()"
+                    <div id="ngrok-url"
                         class="p-4 rounded-xl text-lg font-mono text-cyan-400 cursor-pointer hover:bg-gray-800/50 transition-colors truncate"
                         style="background: rgba(0,0,0,0.3); border: 1px solid rgba(34, 211, 238, 0.3);">
                     </div>
@@ -256,8 +262,12 @@
         const I18N = {
             en: {
                 'remote.title': 'Remote',
-                'remote.subtitle': 'Expose anti-api to external devices via ngrok tunnel',
-                'remote.tokenPlaceholder': 'Enter ngrok authtoken',
+                'remote.subtitle': 'Connect a protocol-compatible inference gateway through a third-party tunnel',
+                'remote.securityNotice': 'ngrok is a third-party tunnel service. Expose only the token-protected inference gateway, never this dashboard or the control plane.',
+                'remote.tokenPlaceholder': 'Enter a new ngrok authtoken',
+                'remote.tokenConfigured': 'A saved token is configured ({masked}). Leave the field empty to reuse it.',
+                'remote.tokenNotConfigured': 'No saved token is configured.',
+                'remote.clearToken': 'Clear the saved token when starting',
                 'remote.getToken': 'Get Token',
                 'remote.start': 'Start',
                 'remote.stop': 'Stop',
@@ -275,8 +285,12 @@
             },
             'zh-CN': {
                 'remote.title': '远程',
-                'remote.subtitle': '通过 ngrok 隧道把 anti-api 暴露给外部设备',
-                'remote.tokenPlaceholder': '输入 ngrok authtoken',
+                'remote.subtitle': '通过第三方隧道连接协议兼容的推理网关',
+                'remote.securityNotice': 'ngrok 是第三方隧道服务。公网仅应暴露受令牌保护的推理网关，绝不能暴露此面板或控制面。',
+                'remote.tokenPlaceholder': '输入新的 ngrok authtoken',
+                'remote.tokenConfigured': '已保存 Token（{masked}）。输入框留空可继续使用。',
+                'remote.tokenNotConfigured': '尚未配置已保存的 Token。',
+                'remote.clearToken': '启动时清除已保存的 Token',
                 'remote.getToken': '获取 Token',
                 'remote.start': '启动',
                 'remote.stop': '停止',
@@ -344,7 +358,11 @@
 
             try {
                 const authtoken = document.getElementById('ngrok-authtoken').value.trim();
-                const body = authtoken ? { authtoken } : {};
+                const clearAuthtoken = document.getElementById('ngrok-clear-token').checked;
+                const body = {
+                    ...(authtoken ? { authtoken } : {}),
+                    ...(clearAuthtoken ? { clearAuthtoken: true } : {}),
+                };
 
                 const res = await fetch(`${API_BASE}/remote/ngrok/start`, {
                     method: 'POST',
@@ -462,9 +480,13 @@
             try {
                 const res = await fetch(`${API_BASE}/remote/config`);
                 const data = await res.json();
-                if (data.ngrokAuthtoken) {
-                    document.getElementById('ngrok-authtoken').value = data.ngrokAuthtoken;
+                const status = document.getElementById('ngrok-token-status');
+                if (data.ngrokAuthtokenConfigured) {
+                    status.textContent = t('remote.tokenConfigured').replace('{masked}', data.ngrokAuthtokenMasked || '••••');
+                } else {
+                    status.textContent = t('remote.tokenNotConfigured');
                 }
+                document.getElementById('ngrok-authtoken').value = '';
             } catch (error) {
                 console.error('Failed to load config:', error);
             }
@@ -496,6 +518,8 @@
             });
         }
 
+        document.getElementById('ngrok-toggle').addEventListener('click', toggleTunnel);
+        document.getElementById('ngrok-url').addEventListener('click', copyNgrokUrl);
         applyLanguage();
         loadConfig();
         refreshStatus();

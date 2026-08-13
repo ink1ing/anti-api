@@ -30,7 +30,7 @@ const compile = Bun.spawn([
     "--windows-publisher",
     "ink1ing",
     "--windows-description",
-    "Local OpenAI/Anthropic-compatible proxy for Antigravity, Codex, Copilot, and Zed",
+    "Independent local protocol-compatibility proxy for authorized provider connections",
     "--windows-version",
     `${version}.0`,
     "src/portable-main.ts",

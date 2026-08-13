@@ -1,7 +1,7 @@
 # Anti-API
 
 <p align="center">
-  <strong>The fastest and best local API proxy service! Convert Antigravity's top AI models to OpenAI/Anthropic compatible API</strong>
+  <strong>An independent local protocol-compatibility and routing proxy for OpenAI- and Anthropic-style clients</strong>
 </p>
 
 <p align="center">
@@ -17,13 +17,13 @@
 
 ---
 
-> **Disclaimer**: This project is based on reverse engineering of Antigravity. Future compatibility is not guaranteed. For long-term use, avoid updating Antigravity.
+> **Scope and authorization**: Anti-API is an independent, unofficial interoperability project. Some integrations use provider CLI, web, or internal endpoints and may break without notice. Compatibility does not imply provider affiliation or endorsement. Use only accounts and services you own or are explicitly authorized to administer, subject to each provider's current terms. Do not disable security updates or provider controls to preserve compatibility.
 
 ## What's New (v3.1.0)
 
 - **Grok provider support** - Added xAI Grok via the Grok CLI reverse proxy (`cli-chat-proxy.grok.com`, OpenAI Responses API), with account import, model routing, and quota-store integration alongside existing providers
 - **Two Grok models exposed** - The standard ModelName `grok-build` (shown as **Xbuild**; this maps to the actual **Grok 4.3** model, as visible inside the Grok CLI) and `grok-composer-2.5-fast` (Composer 2.5 Fast)
-- **Credential reuse** - Grok credentials are imported from the local Grok CLI session (`~/.grok/auth.json`) and auto-refreshed; chosen to reduce account-ban risk and because community needs are still undefined (no standalone login flow is added)
+- **Explicit credential import** - Grok can import an existing local CLI session after user action; no standalone login flow is added. Provider policy, quota, and account-enforcement decisions still apply.
 
 <details>
 <summary>v3.0.0</summary>
@@ -71,8 +71,8 @@
 <details>
 <summary>v2.7.0</summary>
 
-- **Antigravity proxy notice** - Google has officially prohibited reverse-proxy usage of its AI services. The Antigravity reverse proxy still works for now but is **no longer recommended**
-- **Codex & Copilot unaffected** - Reverse-proxy services for Codex and GitHub Copilot remain fully functional and are not subject to the restriction above
+- **Antigravity policy notice** - This unofficial integration may conflict with current provider terms. Its presence in the codebase is not a representation that a particular use is permitted; verify the applicable terms before use.
+- **Separate provider terms** - Codex and GitHub Copilot are governed by their own current terms. Anti-API makes no blanket claim that any provider integration is authorized or unaffected by policy changes.
 - **Log IDE Out** - New one-click action to sign out of the Antigravity IDE (closes the IDE, clears auth, ready for a different account)
 
 </details>
@@ -91,13 +91,17 @@
 
 ## Features
 
-- **Flow + Account Routing** - Custom flows for non-official models, account chains for official models
-- **Five Providers** - Antigravity, Codex, GitHub Copilot, Zed hosted models, and Kiro
+- **Flow + Account Routing** - Custom flows for non-official models, account chains for provider-native model IDs
+- **Six Providers** - Antigravity, Codex, GitHub Copilot, Zed hosted models, Kiro, and Grok
 - **Remote Access** - ngrok/cloudflared/localtunnel with one-click setup
 - **Full Dashboard** - Quota monitoring, routing config, settings panel
-- **Auto-Rotation** - Account switching on 429 errors
+- **Cooldown-aware failover** - Cooldown-aware selection among authorized accounts after quota, auth, or transient upstream failures
 - **Dual Format** - OpenAI and Anthropic API compatible
 - **Tool Calling** - Function calling for Claude Code and CLI tools
+
+### Security boundary
+
+The complete dashboard and management API bind to loopback by default. Remote access uses a separate inference-only listener (default `8966`) and requires `ANTI_API_PUBLIC_TOKEN`; tunnels never expose credentials, logs, settings, account management, or the updater. Credential imports are explicit by default and create local copies under `~/.anti-api`.
 
 ## Zed Account Notes
 
@@ -145,7 +149,8 @@ Multi-arch images (`linux/amd64`, `linux/arm64`) are published to GHCR, so most 
 
 ```bash
 docker run -d --name anti-api \
-  -p 8964:8964 -p 1455-1465:1455-1465 -p 51121-51131:51121-51131 \
+  -p 127.0.0.1:8964:8964 -p 127.0.0.1:1455-1465:1455-1465 -p 127.0.0.1:51121-51131:51121-51131 \
+  -e ANTI_API_CONTAINER_CONTROL_PLANE=1 \
   -v anti-api-data:/app/data \
   ghcr.io/ink1ing/anti-api:latest
 ```
@@ -167,7 +172,7 @@ The container can't read your local IDE credentials, so sign in via OAuth:
 2. Click **Login** for a provider:
    - **GitHub Copilot** — easiest in Docker: enter the shown device code at <https://github.com/login/device>.
    - **Antigravity / Codex** — the panel (and `docker logs anti-api`) prints an `Open this URL to login: ...` link. Open it in your browser; the callback returns to `localhost` and is captured by the mapped ports.
-3. When the account appears on the dashboard, point your client at `http://localhost:8964` (token can be any value).
+3. When the account appears on the dashboard, point your local client at `http://localhost:8964`. Local placeholder keys are accepted only for client compatibility; remote access requires `ANTI_API_PUBLIC_TOKEN`.
 
 > You can also log in from a terminal: `docker compose exec anti-api bun run src/main.ts add-account`.
 
@@ -175,7 +180,8 @@ The container can't read your local IDE credentials, so sign in via OAuth:
 
 | Port range | Purpose |
 |---|---|
-| `8964` | Main API + dashboard |
+| `8964` | Loopback control plane + local API |
+| `8966` | Optional public inference gateway |
 | `51121-51131` | Antigravity OAuth callback |
 | `1455-1465` | Codex OAuth callback |
 
@@ -189,7 +195,7 @@ OAuth callbacks redirect to `localhost`, which won't reach a remote box from you
 - use **Copilot** (device flow, no callback), or
 - SSH-forward the ports: `ssh -L 8964:localhost:8964 -L 51121:localhost:51121 user@host`.
 
-The server has **no authentication** — do not expose these ports to the public internet. Keep them on a private network or behind your own auth/tunnel.
+The complete control plane is loopback-only by default. For remote inference, expose only the separate public gateway with `ANTI_API_PUBLIC_TOKEN`; do not publish the dashboard, logs, settings, accounts, or updater.
 
 #### Data & migration
 
@@ -260,7 +266,7 @@ Supported tunnels:
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │              Smart Routing System                     │  │
 │  │  • Flow Routing (custom model IDs)                    │  │
-│  │  • Account Routing (official model IDs)               │  │
+│  │  • Account Routing (provider-native model IDs)               │  │
 │  │  • Auto-rotation on 429 errors                        │  │
 │  │  • Multi-provider support                             │  │
 │  └──────────────────────────────────────────────────────┘  │
@@ -288,7 +294,7 @@ Supported tunnels:
 The routing system is split into two modes:
 
 - **Flow Routing**: Custom model IDs (e.g. `route:fast`) use your flow entries.
-- **Account Routing**: Official model IDs (e.g. `claude-sonnet-4-5`) use per-model account chains.
+- **Account Routing**: Provider-native model IDs (e.g. `claude-sonnet-4-5`) use per-model account chains.
 
 This enables fine-grained control over model-to-account mapping, allowing you to:
 
@@ -301,7 +307,7 @@ This enables fine-grained control over model-to-account mapping, allowing you to
 
 ```
 Request
-  ├─ Official model → Account Routing → Account chain → Provider → Upstream API
+  ├─ Provider-native model → Account Routing → Account chain → Provider → Upstream API
   └─ Custom model/route:flow → Flow Routing → Flow entries → Provider → Upstream API
 
 No match → 400 error
@@ -311,9 +317,9 @@ No match → 400 error
 
 1. **Access Panel**: `http://localhost:8964/routing`
 2. **Flow Routing**: Create a flow (e.g., "fast", "opus"), add Provider → Account → Model entries
-3. **Account Routing**: Choose an official model, set account order, optionally enable Smart Switch
+3. **Account Routing**: Choose a provider-native model, set account order, optionally enable Smart Switch
 4. **Use Flow**: Set `model` to `route:<flow-name>` or the flow name directly
-5. **Use Official Model**: Request the official model ID directly (e.g., `claude-sonnet-4-5`)
+5. **Use Provider-native Model**: Request the provider-native model ID directly (e.g., `claude-sonnet-4-5`)
 
 **Example Request**:
 ```json
@@ -333,14 +339,14 @@ No match → 400 error
 Expose your local Anti-API to the internet for cross-device access. Useful for:
 
 - **Mobile Development**: Test AI integrations on iOS/Android
-- **Team Sharing**: Share your quota with teammates
+- **Authorized cross-device access**: Connect environments administered by the same user or organization through the authenticated inference-only gateway; do not share personal subscriptions or credentials.
 - **External Tools**: Connect AI tools that require public URLs
 
 ### Supported Tunnels
 
 | Tunnel | Account Required | Stability | Speed |
 |--------|------------------|-----------|-------|
-| **ngrok** | Yes (free tier) | Best | Fast |
+| **ngrok** | Provider-dependent | Managed third-party tunnel | Fast setup |
 | **cloudflared** | No | Good | Medium |
 | **localtunnel** | No | Fair | Slow |
 
@@ -370,7 +376,7 @@ Configure application behavior at `http://localhost:8964/settings`:
 | `claude-sonnet-4-5-thinking` | Extended reasoning |
 | `claude-opus-4-5-thinking` | Most capable |
 | `claude-opus-4-6-thinking` | Most capable (new generation) |
-| `gemini-3-flash` | Fastest responses |
+| `gemini-3-flash` | Latency-oriented option |
 | `gemini-3-pro-high` | High quality |
 | `gemini-3-pro-low` | Cost-effective |
 | `gpt-oss-120b` | Open source |
@@ -440,13 +446,13 @@ MIT
   <strong>致力于成为最快最好用的API本地代理服务！将 Antigravity 内模型配额转换为 OpenAI/Anthropic 兼容的 API</strong>
 </p>
 
-> **免责声明**：本项目基于 Antigravity 逆向开发，未来版本兼容性未知，长久使用请尽可能避免更新Antigravity。
+> **范围与授权说明**：Anti-API 是独立、非官方的互操作项目。部分集成使用提供商的 CLI、网页或内部端点，可能随时失效。兼容性不代表提供商隶属或背书。仅可使用本人拥有或被明确授权管理的账号与服务，并须遵守各提供商现行条款；不得为维持兼容而停用安全更新或提供商控制。
 
 ## 更新内容 (v3.1.0)
 
 - **新增 Grok Provider 支持** - 通过 Grok CLI 的反向代理（`cli-chat-proxy.grok.com`，OpenAI Responses API）接入 xAI Grok，包含账号导入、模型路由与配额体系集成
 - **暴露两个 Grok 模型** - 提供的标准 ModelName 是 `grok-build`（面板显示为 **Xbuild**），但其对应的实际模型是 **Grok 4.3**（可在 Grok CLI 内看到）；以及 `grok-composer-2.5-fast`（Composer 2.5 Fast）
-- **复用本地凭证** - Grok 凭证从本地 Grok CLI 会话（`~/.grok/auth.json`）导入并自动续期；选择该方式是为了降低账号被封禁的可能性，且社区的具体需求尚不确定（不新增独立登录流程）
+- **显式导入凭证** - 用户主动操作后可从现有 Grok CLI 会话导入凭证；不新增独立登录流程。提供商政策、配额和账号处置规则仍然适用。
 
 <details>
 <summary>v3.0.0</summary>
@@ -623,10 +629,10 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build
 
 由此实现模型到账号的精细控制：
 
-- **负载均衡** - 将请求分发到多个账号
+- **获授权账号选择** - 在本人拥有或获授权管理的账号之间选择路由
 - **模型专用** - 指定模型使用专用账号
 - **混合提供商** - 组合 Antigravity、Codex、Copilot、Zed
-- **自动降级** - 账号触发 429 时自动切换下一个
+- **遵守冷却的故障转移** - 在配额、认证或短暂上游失败后，仅在获授权账号中按冷却时间选择
 
 ### 工作流程
 
@@ -647,7 +653,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build
 5. **使用官方模型**: 直接请求官方模型 ID（如 `claude-sonnet-4-5`）
 
 **Flow 顺序**：按配置顺序尝试，429 时切换下一个。
-**Account 路由**：Smart Switch 开启且未配置条目时，按账号创建顺序自动展开。
+**Account 路由**：Smart Switch 仅在获授权账号集合内展开；不会为规避限制创建或聚合账号。
 
 ---
 
@@ -656,7 +662,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build
 将本地 Anti-API 暴露到公网，支持跨设备访问：
 
 - **移动开发** - iOS/Android 测试 AI 集成
-- **团队共享** - 与队友共享配额
+- **获授权的跨设备访问** - 通过带认证、仅提供推理功能的网关连接同一用户或组织管理的环境；不得共享个人订阅或凭证。
 - **外部工具** - 连接需要公网 URL 的 AI 工具
 
 ### 隧道对比
@@ -674,7 +680,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build
 3. **启动隧道**: 点击启动，等待公网 URL
 4. **使用远程 URL**: 用隧道 URL 替换 `localhost:8964`
 
-**安全提示**: 任何人拥有隧道 URL 即可访问您的 API，请妥善保管。
+**安全提示**: 隧道是第三方服务，仅应暴露带 `ANTI_API_PUBLIC_TOKEN` 的推理网关；面板、日志、设置、账号与更新器保持本机访问。
 
 ## 设置面板
 
@@ -693,7 +699,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build
 | `claude-sonnet-4-5-thinking` | 扩展推理 |
 | `claude-opus-4-5-thinking` | 最强能力 |
 | `claude-opus-4-6-thinking` | 最强能力（新一代） |
-| `gemini-3-flash` | 最快响应 |
+| `gemini-3-flash` | 低延迟选项 |
 | `gemini-3-pro-high` | 高质量 |
 
 ### GitHub Copilot

@@ -4,7 +4,7 @@
 
 - Add multi-provider authentication for Antigravity, Codex, and GitHub Copilot.
 - Provide a routing workflow editor (`/routing`) with drag-and-drop fallback chain.
-- Execute Anthropic-compatible requests via the configured chain and switch only on 429.
+- Execute Anthropic-compatible requests via the configured chain and respect cooldown/Retry-After before selecting another eligible authorized account.
 - Keep credentials persistent, structured, and maintainable.
 
 ## Architecture
@@ -29,7 +29,7 @@
 
 - `/v1/messages` -> `createRoutedCompletion` / `createRoutedCompletionStream`
 - Chain order respects `/routing` configuration.
-- 429 triggers fallback to next entry.
+- 429 records a cooldown; another eligible entry may be selected only within the operator's authorized account set.
 - Antigravity entries can be pinned to a specific account (no internal rotation).
 
 ## Endpoints

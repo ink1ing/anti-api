@@ -853,7 +853,9 @@ export async function createCodexCompletion(
         if (error instanceof UpstreamError && isAuthStatus(error) && effectiveAccount.refreshToken && !refreshedOnce) {
             refreshedOnce = true
             try {
-                const imported = await importCodexAuthSources()
+                const imported = process.env.ANTI_API_IMPORT_CODEX_ON_AUTH_FAILURE === "1"
+                    ? await importCodexAuthSources()
+                    : { accounts: [], sources: [] }
                 const updated = imported.accounts.find(acc =>
                     acc.id === effectiveAccount.id ||
                     (acc.email && acc.email === effectiveAccount.email)
@@ -901,7 +903,9 @@ export async function createCodexCompletion(
                             lastError = null
                         } else {
                             try {
-                                const imported = await importCodexAuthSources()
+                                const imported = process.env.ANTI_API_IMPORT_CODEX_ON_AUTH_FAILURE === "1"
+                    ? await importCodexAuthSources()
+                    : { accounts: [], sources: [] }
                                 const updated = imported.accounts.find(acc =>
                                     acc.id === effectiveAccount.id ||
                                     (acc.email && acc.email === effectiveAccount.email)

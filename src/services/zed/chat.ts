@@ -371,9 +371,9 @@ function buildAnthropicMessages(messages: ClaudeMessage[]): { system?: string; m
 
     for (const message of messages) {
         const role = message.role === "assistant" ? "assistant" : "user"
-        const content = typeof message.content === "string"
+        const content: any[] = typeof message.content === "string"
             ? [{ type: "text", text: message.content }]
-            : (message.content || []).flatMap((block: any) => {
+            : (Array.from(message.content || []) as any[]).flatMap<any>((block: any) => {
                 if (!block || typeof block !== "object") return []
                 if (block.type === "text") {
                     return [{ type: "text", text: block.text || "" }]

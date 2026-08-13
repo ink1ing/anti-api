@@ -152,7 +152,7 @@ throw new Error("All accounts exhausted")
 | `auth.json` | `~/.anti-api/auth.json` | OAuth tokens per account |
 | `routing.json` | `~/.anti-api/routing.json` | Routing flow configuration |
 | `settings.json` | `~/.anti-api/settings.json` | App settings |
-| `remote-config.json` | `data/remote-config.json` | ngrok/tunnel config |
+| `remote-config.json` | `~/.anti-api/remote-config.json` | ngrok/tunnel config |
 
 ---
 
@@ -163,9 +163,20 @@ throw new Error("All accounts exhausted")
    - Implementation: Rate limiter with exclusive lock
 
 2. **Multi-Account Rotation**
-   - Reason: Maximize available quota across accounts
-   - Implementation: Auto-rotate on 429 errors
+   - Reason: Reliability across separately authorized accounts while respecting provider limits
+   - Implementation: Record cooldowns, respect Retry-After/reset signals, and use only eligible authorized accounts
 
 3. **Dual API Format**
    - Reason: Support both OpenAI and Anthropic clients
    - Implementation: Shared internal format, dual adapters
+
+---
+
+## Security Boundaries
+
+- The full Hono application (dashboard and management routes) binds to loopback.
+- A separate public app exposes only inference/model/health routes and requires `ANTI_API_PUBLIC_TOKEN`.
+- Tunnels target the public app, never the management port.
+- External CLI/IDE credential import is explicit by default; local credential files are plaintext with owner-only POSIX modes where supported.
+- OAuth and quota calls verify TLS by default. Certificate errors do not trigger an automatic insecure fallback.
+- Provider integrations are unofficial and may use CLI, web, or internal endpoints; protocol compatibility is not provider endorsement or authorization.

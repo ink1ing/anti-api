@@ -24,8 +24,6 @@ import { join } from "node:path"
 import { existsSync } from "node:fs"
 import consola from "consola"
 
-export type { IdeAuthInfo, IdeLogoutResult }
-
 const execAsync = promisify(exec)
 
 // Antigravity IDE 数据库路径

@@ -443,7 +443,7 @@
         <header class="flex items-center justify-between">
             <div>
                 <h1 class="text-3xl font-bold text-gray-200" data-i18n="routing.title">Routing</h1>
-                <p class="text-sm text-gray-500 mt-1 font-bold" data-i18n="routing.subtitle">Build model chains with fallback on 429</p>
+                <p class="text-sm text-gray-500 mt-1 font-bold" data-i18n="routing.subtitle">Build reliability chains with cooldown-aware failover for authorized accounts</p>
             </div>
             <div class="flex items-center gap-4">
                 <div class="flex items-center gap-2 text-xs">
@@ -530,7 +530,7 @@
             <aside class="panel rounded-2xl p-4 flex flex-col min-h-0">
                 <div class="mb-3 flex-shrink-0">
                     <h2 class="text-sm uppercase tracking-[0.2em] text-gray-500" data-i18n="routing.models">Models</h2>
-                    <p class="text-xs text-gray-600 mt-1" data-i18n="routing.modelsDesc">Official model IDs only.</p>
+                    <p class="text-xs text-gray-600 mt-1" data-i18n="routing.modelsDesc">Provider-native model IDs only.</p>
                 </div>
                 <div id="account-model-list" class="space-y-2 flex-1 min-h-0 overflow-y-auto panel-scroll"></div>
             </aside>
@@ -605,6 +605,15 @@
             }
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
+
         function safeJsonParse(text) {
             if (!text) return null;
             try {
@@ -662,7 +671,7 @@
                 'common.save': 'Save',
                 'common.refresh': 'Refresh',
                 'routing.title': 'Routing',
-                'routing.subtitle': 'Build model chains with fallback on 429',
+                'routing.subtitle': 'Build reliability chains with cooldown-aware failover for authorized accounts',
                 'routing.flowRouting': 'Flow Routing',
                 'routing.accountRouting': 'Account Routing',
                 'routing.backToQuota': 'Back to Quota',
@@ -674,7 +683,7 @@
                 'routing.saved': 'Saved',
                 'routing.savedDesc': 'Edit, rename, or delete saved flows.',
                 'routing.models': 'Models',
-                'routing.modelsDesc': 'Official model IDs only.',
+                'routing.modelsDesc': 'Provider-native model IDs only.',
                 'routing.accountChain': 'Account Chain',
                 'routing.accountChainDesc': 'Ordered provider/account fallback.',
                 'routing.smartSwitch': 'Smart Switch',
@@ -685,7 +694,7 @@
                 'routing.autoSmart': 'Auto (Smart Switch)',
                 'routing.smartHint': 'Smart Switch on: auto entries expand by account order.',
                 'routing.manualHint': 'Smart Switch off: configure explicit accounts for each model.',
-                'routing.noOfficialModels': 'No official models available.',
+                'routing.noOfficialModels': 'No provider-native models available.',
                 'routing.noEntries': 'No entries yet.',
                 'routing.noAccounts': 'No accounts yet. Add accounts from /quota.',
                 'routing.noSavedFlows': 'No saved flows yet.',
@@ -712,7 +721,7 @@
                 'common.save': '保存',
                 'common.refresh': '刷新',
                 'routing.title': '路由',
-                'routing.subtitle': '构建模型链，并在 429 时自动回退',
+                'routing.subtitle': '为获授权账号构建遵守冷却时间的可靠性链',
                 'routing.flowRouting': '流程路由',
                 'routing.accountRouting': '账号路由',
                 'routing.backToQuota': '返回配额',
@@ -926,10 +935,10 @@
                 card.className = `node node-palette w-full text-left rounded-xl px-3 py-3 text-xs space-y-1 ${isActive ? 'border-cyan-300/70 shadow-[0_0_18px_rgba(110,231,255,0.25)]' : ''}`;
                 card.innerHTML = `
                     <div class="flex items-center justify-between">
-                        <span class="text-sm font-semibold text-gray-200">${model.label}</span>
+                        <span class="text-sm font-semibold text-gray-200">${escapeHtml(model.label)}</span>
                         <span class="account-pill text-[10px] px-2 py-0.5 rounded-full">${count} ${t('routing.hops')}</span>
                     </div>
-                    <div class="text-[10px] text-gray-500">${model.id}</div>
+                    <div class="text-[10px] text-gray-500">${escapeHtml(model.id)}</div>
                 `;
                 card.addEventListener('click', () => {
                     selectedAccountModelId = model.id;
@@ -969,8 +978,8 @@
                     : ((entry.provider === 'copilot' || entry.provider === 'zed' || entry.provider === 'kiro') ? maskUsername(rawLabel) : maskEmail(rawLabel));
                 card.innerHTML = `
                     <div>
-                        <div class="text-[10px] uppercase tracking-[0.2em] text-gray-500">${entry.provider}</div>
-                        <div class="text-sm font-semibold text-gray-200 mt-1">${display}</div>
+                        <div class="text-[10px] uppercase tracking-[0.2em] text-gray-500">${escapeHtml(entry.provider)}</div>
+                        <div class="text-sm font-semibold text-gray-200 mt-1">${escapeHtml(display)}</div>
                     </div>
                     <div class="flex items-center gap-2 text-[10px] text-gray-500">
                         <button onclick="moveAccountRouteEntry(${index}, -1)">${t('routing.up')}</button>
@@ -1174,7 +1183,7 @@
                 const header = document.createElement('div');
                 header.className = 'flex items-center justify-between';
                 header.innerHTML = `
-                    <div class="text-sm font-semibold text-gray-200">${flow.name}</div>
+                    <div class="text-sm font-semibold text-gray-200">${escapeHtml(flow.name)}</div>
                     <span class="account-pill text-[10px] px-2 py-0.5 rounded-full">${flow.entries?.length || 0} ${t('routing.hops')}</span>
                 `;
                 card.appendChild(header);
@@ -1299,7 +1308,7 @@
                     header.innerHTML = `
                         <div class="flex items-center gap-2">
                             <span class="text-[10px] text-gray-500 transition-transform ${isCollapsed ? '' : 'rotate-90'}" data-toggle-icon>▶</span>
-                            <span class="text-sm font-semibold text-gray-200">${maskedDisplayName}</span>
+                            <span class="text-sm font-semibold text-gray-200">${escapeHtml(maskedDisplayName)}</span>
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="account-pill text-[10px] px-2 py-0.5 rounded-full">${provider}</span>
@@ -1347,7 +1356,7 @@
 
                         node.innerHTML = `
                             <div class="flex items-center justify-between relative z-10">
-                                <span>${model.label}</span>
+                                <span>${escapeHtml(model.label)}</span>
                                 ${modelQuota !== null ? `<span class="text-[10px] text-cyan-400/80">${modelQuota}%</span>` : ''}
                             </div>
                         `;
@@ -1392,10 +1401,10 @@
                 node.innerHTML = `
                     <div class="flex items-center justify-between">
                         <div class="flow-badge">${i + 1}</div>
-                        <span class="text-[10px] uppercase tracking-[0.2em] text-gray-500">${entry.provider}</span>
+                        <span class="text-[10px] uppercase tracking-[0.2em] text-gray-500">${escapeHtml(entry.provider)}</span>
                     </div>
-                    <div class="text-xs text-gray-500 mt-2">${maskedAccountLabel}</div>
-                    <div class="text-sm font-semibold text-gray-200 mt-1">${entry.label}</div>
+                    <div class="text-xs text-gray-500 mt-2">${escapeHtml(maskedAccountLabel)}</div>
+                    <div class="text-sm font-semibold text-gray-200 mt-1">${escapeHtml(entry.label)}</div>
                     <div class="text-[10px] text-gray-500 mt-2">${t('routing.flowFallback')}</div>
                     <button class="text-[10px] text-gray-500 mt-2" onclick="removeEntry(${i})">${t('routing.remove')}</button>
                     <span class="flow-port flow-port-top"></span>

@@ -325,6 +325,14 @@ authRouter.get("/ide/status", (c) => {
 // 登出 IDE 账号（关闭 IDE + 清除认证）
 authRouter.post("/ide/logout", async (c) => {
     try {
+        const body: { confirm?: string } = await c.req.json<{ confirm?: string }>().catch(() => ({}))
+        if (body.confirm !== "CLOSE_IDE_AND_CLEAR_AUTH") {
+            return c.json({
+                success: false,
+                error: "Confirmation required. This closes Antigravity and removes its authentication keys from state.vscdb.",
+                requiredConfirmation: "CLOSE_IDE_AND_CLEAR_AUTH",
+            }, 400)
+        }
         const result = await logoutIdeSession()
         return c.json(result)
     } catch (error) {

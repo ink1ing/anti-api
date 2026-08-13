@@ -1,4 +1,4 @@
-import { fetchInsecureJson, getProjectID } from "./oauth"
+import { fetchJson, getProjectID } from "./oauth"
 import { generateMockProjectId } from "./project-id"
 import { UpstreamError } from "~/lib/error"
 import { getAntigravityUserAgent } from "~/lib/antigravity-client"
@@ -18,7 +18,7 @@ export async function fetchAntigravityModels(
     const resolvedProjectId = projectId || await getProjectID(accessToken) || generateMockProjectId()
     const project = resolvedProjectId
 
-    const response = await fetchInsecureJson(`${CLOUD_CODE_BASE_URL}/v1internal:fetchAvailableModels`, {
+    const response = await fetchJson(`${CLOUD_CODE_BASE_URL}/v1internal:fetchAvailableModels`, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${accessToken}`,

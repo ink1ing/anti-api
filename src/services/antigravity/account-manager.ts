@@ -15,6 +15,7 @@ import { MIN_REQUEST_INTERVAL_MS } from "~/lib/constants"
 import { fetchAntigravityModels, pickResetTime } from "./quota-fetch"
 import { UpstreamError } from "~/lib/error"
 import { getDataDir } from "~/lib/data-dir"
+import { tightenPrivateFile, writePrivateFile } from "~/lib/private-file"
 
 type RateLimitReason =
     | "quota_exhausted"
@@ -201,6 +202,7 @@ class AccountManager {
     load(): void {
         try {
             if (fs.existsSync(this.dataFile)) {
+                tightenPrivateFile(this.dataFile)
                 const data = JSON.parse(fs.readFileSync(this.dataFile, "utf-8"))
                 if (Array.isArray(data.accounts)) {
                     for (const acc of data.accounts) {
@@ -256,10 +258,6 @@ class AccountManager {
      */
     save(): void {
         try {
-            const dir = path.dirname(this.dataFile)
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true })
-            }
             const accounts = Array.from(this.accounts.values()).map(acc => ({
                 id: acc.id,
                 email: acc.email,
@@ -268,7 +266,7 @@ class AccountManager {
                 expiresAt: acc.expiresAt,
                 projectId: acc.projectId,
             }))
-            fs.writeFileSync(this.dataFile, JSON.stringify({ accounts }, null, 2))
+            writePrivateFile(this.dataFile, JSON.stringify({ accounts }, null, 2))
         } catch (e) {
             consola.warn("Failed to save accounts:", e)
         }
@@ -714,33 +712,20 @@ class AccountManager {
         }
 
         if (minWaitMs !== null && minWaitMs <= 2000) {
-            // 🔄 乐观重置：等待时间很短时，清除所有限流记录
-            consola.warn(`All accounts rate limited, waiting ${Math.ceil(minWaitMs / 1000)}s for sync...`)
-            await new Promise(resolve => setTimeout(resolve, 500))
+            consola.warn(`All authorized accounts are rate limited; waiting ${Math.ceil(minWaitMs / 1000)}s before retry eligibility.`)
+            await new Promise(resolve => setTimeout(resolve, minWaitMs + RESET_TIME_BUFFER_MS))
             const refreshed = allAccounts.find(acc => !acc.rateLimitedUntil || acc.rateLimitedUntil <= Date.now())
             if (refreshed) {
                 return {
                     accessToken: refreshed.accessToken,
-                    projectId: refreshed.projectId || "unknown",
+                    projectId: await this.ensureProjectId(refreshed),
                     email: refreshed.email,
                     accountId: refreshed.id,
                 }
             }
-            // 乐观重置：清除所有限流记录
-            consola.warn(`🔄 Optimistic reset: Clearing all ${allAccounts.length} rate limit record(s)`)
-            for (const acc of allAccounts) {
-                acc.rateLimitedUntil = null
-                acc.consecutiveFailures = 0
-            }
-            return {
-                accessToken: bestAccount.accessToken,
-                projectId: bestAccount.projectId || "unknown",
-                email: bestAccount.email,
-                accountId: bestAccount.id,
-            }
         }
 
-        consola.warn(`All accounts rate limited, min wait ${Math.ceil(minWaitMs || 0 / 1000)}s`)
+        consola.warn(`All accounts rate limited, min wait ${Math.ceil((minWaitMs || 0) / 1000)}s`)
         return null
     }
 

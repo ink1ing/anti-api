@@ -88,7 +88,7 @@ export async function handleChatCompletion(c: Context): Promise<Response> {
         } catch (error) {
             if (error instanceof RoutingError) {
                 c.header("X-Log-Reason", buildValidationReason(error.message))
-                return c.json({ error: { type: "invalid_request_error", message: error.message } }, error.status)
+                return c.json({ error: { type: "invalid_request_error", message: error.message } }, error.status as any)
             }
             throw error
         }

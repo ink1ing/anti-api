@@ -1,14 +1,16 @@
 import consola from "consola"
 import https from "https"
 import { createHash, randomBytes } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs"
+import { existsSync, readFileSync, readdirSync } from "fs"
 import { join } from "path"
+import { ensurePrivateDir, writePrivateFile } from "~/lib/private-file"
 import { authStore } from "~/services/auth/store"
 import type { AuthSource, ProviderAccount } from "~/services/auth/types"
 
 const CODEX_AUTH_FILE = "~/.codex/auth.json"
 const CODEX_PROXY_AUTH_DIR = "~/.cli-proxy-api"
-const CODEX_PROXY_REFRESH_URL = "https://token.oaifree.com/api/auth/refresh"
+const CODEX_PROXY_REFRESH_URL = process.env.ANTI_API_CODEX_PROXY_REFRESH_URL?.trim()
+const ALLOW_THIRD_PARTY_CODEX_REFRESH = process.env.ANTI_API_ALLOW_THIRD_PARTY_CODEX_REFRESH === "1"
 const CODEX_CLI_LOGIN_TIMEOUT_MS = 10 * 60 * 1000
 const CODEX_INSECURE_TLS = process.env.ANTI_API_CODEX_INSECURE_TLS === "1"
 const CODEX_TLS_HINT = "Codex OAuth TLS certificate error. Set ANTI_API_CODEX_INSECURE_TLS=1 to bypass."
@@ -348,9 +350,7 @@ function buildExpiredIso(expiresAt?: number): string | undefined {
 
 function saveCodexProxyAuthFile(account: ProviderAccount, idToken?: string): void {
     const dir = expandHomePath(CODEX_PROXY_AUTH_DIR)
-    if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true })
-    }
+    ensurePrivateDir(dir)
 
     const key = sanitizeFileKey(account.email || account.id)
     const filePath = join(dir, `codex-${key}.json`)
@@ -364,7 +364,7 @@ function saveCodexProxyAuthFile(account: ProviderAccount, idToken?: string): voi
         type: "codex",
         auth_source: account.authSource,
     }
-    writeFileSync(filePath, JSON.stringify(payload, null, 2))
+    writePrivateFile(filePath, JSON.stringify(payload, null, 2))
 }
 
 function matchesIdentifier(value: string | undefined, identifiers: string[]): boolean {
@@ -531,7 +531,7 @@ function updateCliSessionOutput(session: CodexCliLoginSession, chunk: string): v
 
 export async function startCodexCliLogin(): Promise<{
     sessionId: string
-    status: "pending" | "error"
+    status: "pending" | "success" | "error"
     message?: string
     verificationUri?: string
     userCode?: string
@@ -613,7 +613,7 @@ export async function startCodexCliLogin(): Promise<{
 
         return {
             sessionId,
-            status: session.status,
+            status: session.status as "pending" | "success" | "error",
             message: session.message,
             verificationUri: session.verificationUri,
             userCode: session.userCode,
@@ -1144,11 +1144,18 @@ export async function refreshCodexAccessToken(
 async function refreshCodexProxyAccessToken(
     refreshToken: string
 ): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number }> {
-    const params = new URLSearchParams({
-        refresh_token: refreshToken,
-    })
+    if (!ALLOW_THIRD_PARTY_CODEX_REFRESH || !CODEX_PROXY_REFRESH_URL) {
+        throw new Error("Imported CLIProxy Codex credentials cannot be refreshed by default. Re-import a current token or use the normal Codex login flow.")
+    }
+    const target = new URL(CODEX_PROXY_REFRESH_URL)
+    if (target.protocol !== "https:") {
+        throw new Error("ANTI_API_CODEX_PROXY_REFRESH_URL must use HTTPS.")
+    }
+    consola.warn(`Sending a Codex refresh token to the explicitly configured third-party host: ${target.host}`)
 
-    const response = await fetchJsonWithFallback(CODEX_PROXY_REFRESH_URL, {
+    const params = new URLSearchParams()
+    params.set("refresh_token", refreshToken)
+    const response = await fetchJsonWithFallback(target.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: params.toString(),
@@ -1157,17 +1164,14 @@ async function refreshCodexProxyAccessToken(
     if (response.status < 200 || response.status >= 300) {
         throw new Error(formatOAuthError(response.data, "Codex proxy token refresh failed", response.status))
     }
-
-    const data = (response.data || {}) as any
-    const accessToken = data.access_token || data.accessToken
-    if (!accessToken) {
-        throw new Error("Codex proxy token refresh failed: missing access token")
-    }
-
+    const data = (response.data || {}) as Record<string, unknown>
+    const accessToken = String(data.access_token || data.accessToken || "")
+    if (!accessToken) throw new Error("Codex proxy token refresh failed: missing access token")
+    const nextRefreshToken = data.refresh_token || data.refreshToken
     return {
         accessToken,
-        refreshToken: data.refresh_token || data.refreshToken,
-        expiresIn: data.expires_in,
+        refreshToken: nextRefreshToken ? String(nextRefreshToken) : undefined,
+        expiresIn: typeof data.expires_in === "number" ? data.expires_in : undefined,
     }
 }
 

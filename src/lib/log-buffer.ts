@@ -1,4 +1,5 @@
 import { format } from "util"
+import { redactSensitiveText } from "./redaction"
 
 export type LogLevel = "log" | "info" | "warn" | "error" | "debug"
 
@@ -22,7 +23,7 @@ let captureEnabled = false
 
 function appendLog(level: LogLevel, args: unknown[]): void {
     if (!captureEnabled) return
-    const line = args.length ? format(...args) : ""
+    const line = redactSensitiveText(args.length ? format(...args) : "")
     const entry: LogEntry = {
         id: nextId++,
         ts: new Date().toISOString(),

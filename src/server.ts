@@ -21,7 +21,7 @@ import { initAuth, isAuthenticated } from "./services/antigravity/login"
 import { accountManager } from "./services/antigravity/account-manager"
 import { loadRoutingConfig } from "./services/routing/config"
 import { getProviderModels } from "./services/routing/models"
-import { importCodexAuthSources, removeCodexAuthArtifacts } from "./services/codex/oauth"
+import { importCodexAuthSources } from "./services/codex/oauth"
 import { importGrokAuthSources } from "./services/grok/oauth"
 import { loadSettings, saveSettings } from "./services/settings"
 import { pingAccount } from "./services/ping"
@@ -33,6 +33,9 @@ import { formatLogTime, getRequestLogContext, runWithRequestContext } from "./li
 import { initLogCapture, setLogCaptureEnabled } from "./lib/log-buffer"
 import { getUsage, resetUsage } from "./services/usage-tracker"
 import { getPublicDir } from "./lib/public-dir"
+
+import { getPublicGatewayToken, extractPublicToken, tokenMatches } from "./lib/public-access"
+import { isLoopbackRequest } from "./lib/local-request"
 
 export const server = new Hono()
 const PROVIDERS: AuthProvider[] = ["antigravity", "codex", "copilot", "zed", "kiro", "grok"]
@@ -91,28 +94,33 @@ server.use(cors({
         return null
     },
 }))
+server.use(async (c, next) => {
+    if (!isLoopbackRequest(c.req.raw)) {
+        return c.json({ success: false, error: "The local control plane is only available through a loopback host and origin." }, 403)
+    }
+    await next()
+})
 
 // 启动时自动加载已保存的认证
 initAuth()
 accountManager.load()
 
-// 自动导入 Codex 账户 (从 ~/.codex/auth.json 和 ~/.cli-proxy-api/)
-importCodexAuthSources().then(result => {
-    if (result.accounts.length > 0) {
-        consola.success(`Codex: Imported ${result.accounts.length} account(s) from ${result.sources.join(", ")}`)
-    }
-}).catch(err => {
-    void err
-})
+// Optional startup imports are explicit because they read and copy credentials from other tools.
+if (process.env.ANTI_API_IMPORT_CODEX_ON_START === "1") {
+    importCodexAuthSources().then(result => {
+        if (result.accounts.length > 0) {
+            consola.success(`Codex: Imported ${result.accounts.length} account(s) from ${result.sources.join(", ")}`)
+        }
+    }).catch(() => undefined)
+}
 
-// 自动导入 Grok 账户 (从 ~/.grok/auth.json，复用 Grok CLI 的会话凭证)
-importGrokAuthSources().then(result => {
-    if (result.accounts.length > 0) {
-        consola.success(`Grok: Imported ${result.accounts.length} account(s) from ${result.sources.join(", ")}`)
-    }
-}).catch(err => {
-    void err
-})
+if (process.env.ANTI_API_IMPORT_GROK_ON_START === "1") {
+    importGrokAuthSources().then(result => {
+        if (result.accounts.length > 0) {
+            consola.success(`Grok: Imported ${result.accounts.length} account(s) from ${result.sources.join(", ")}`)
+        }
+    }).catch(() => undefined)
+}
 
 // 根路径 - 重定向到配额面板
 server.get("/", (c) => c.redirect("/quota"))
@@ -320,14 +328,9 @@ server.post("/accounts/ping", async (c) => {
     }
 })
 
-// 删除账号 - API（同时清理 routing 配置）
+// 删除账号 - API（只清理 Anti-API 自己的账号和 routing 配置）
 server.delete("/accounts/:id", async (c) => {
     const accountId = c.req.param("id")
-    const codexAccount = authStore.getAccount("codex", accountId) ||
-        authStore.listAccounts("codex").find(acc => acc.email === accountId)
-    const codexIdentifiers = new Set<string>()
-    codexIdentifiers.add(accountId)
-    if (codexAccount?.email) codexIdentifiers.add(codexAccount.email)
 
     // 先尝试从 accountManager 删除 (antigravity 内存管理)
     let success = accountManager.removeAccount(accountId)
@@ -379,10 +382,11 @@ server.delete("/accounts/:id", async (c) => {
         } catch (e) {
             console.error("Failed to cleanup routing config:", e)
         }
-        if (codexAccount) {
-            removeCodexAuthArtifacts(Array.from(codexIdentifiers))
-        }
-        return c.json({ success: true, message: `Account ${accountId} removed` })
+        return c.json({
+            success: true,
+            message: `Account ${accountId} removed from Anti-API`,
+            externalArtifactsPreserved: true,
+        })
     }
     return c.json({ success: false, error: "Account not found" }, 404)
 })
@@ -417,3 +421,42 @@ server.get("/health", (c) => c.json({
     status: "ok",
     authenticated: isAuthenticated(),
 }))
+
+export function createPublicServer(token: string | null = getPublicGatewayToken()): Hono {
+    const app = new Hono()
+
+    app.get("/health", (c) => c.json({ status: "ok" }))
+    const publicPaths = [
+        "/v1/chat/completions",
+        "/v1/messages",
+        "/v1beta/messages",
+        "/messages",
+        "/v1/models",
+        "/v1beta/models",
+        "/models",
+    ]
+    for (const path of publicPaths) {
+        app.use(path, async (c, next) => {
+            if (!token) {
+                return c.json({ error: { type: "configuration_error", message: "Public inference is not configured." } }, 503)
+            }
+            const provided = extractPublicToken(c.req.raw)
+            if (!tokenMatches(token, provided)) {
+                return c.json({ error: { type: "authentication_error", message: "A valid public gateway token is required." } }, 401)
+            }
+            await next()
+        })
+    }
+
+    app.route("/v1/chat/completions", openaiRoutes)
+    app.route("/v1/messages", messageRoutes)
+    app.route("/v1beta/messages", messageRoutes)
+    app.route("/messages", messageRoutes)
+    app.get("/v1/models", modelsHandler)
+    app.get("/v1beta/models", modelsHandler)
+    app.get("/models", modelsHandler)
+
+    return app
+}
+
+export const publicServer = createPublicServer()

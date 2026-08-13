@@ -1,7 +1,7 @@
 {
   "name": "anti-api",
   "version": "3.1.0",
-  "description": "Antigravity API proxy - exposes Antigravity's built-in LLMs as Anthropic-compatible API",
+  "description": "Independent local protocol-compatibility and routing proxy for OpenAI- and Anthropic-style clients",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/main.ts start",
@@ -30,5 +30,14 @@
     "@types/bun": "latest",
     "@types/localtunnel": "^2.0.4",
     "typescript": "^5.7.2"
+  },
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ink1ing/anti-api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ink1ing/anti-api/issues"
   }
 }

@@ -7,6 +7,7 @@ import { state } from "~/lib/state"
 import {
     getAllTunnelStatus,
     getSavedConfig,
+    clearSavedNgrokAuthtoken,
     startCloudflared,
     stopCloudflared,
     startNgrok,
@@ -40,7 +41,8 @@ remoteRouter.post("/cloudflared/stop", (c) => {
 
 // ngrok
 remoteRouter.post("/ngrok/start", async (c) => {
-    const body = await c.req.json<{ authtoken?: string }>().catch(() => ({}))
+    const body: { authtoken?: string; clearAuthtoken?: boolean } = await c.req.json<{ authtoken?: string; clearAuthtoken?: boolean }>().catch(() => ({}))
+    if (body.clearAuthtoken) clearSavedNgrokAuthtoken()
     const status = await startNgrok(state.port, body.authtoken)
     return c.json(status)
 })
@@ -52,7 +54,7 @@ remoteRouter.post("/ngrok/stop", (c) => {
 
 // localtunnel
 remoteRouter.post("/localtunnel/start", async (c) => {
-    const body = await c.req.json<{ subdomain?: string }>().catch(() => ({}))
+    const body: { subdomain?: string } = await c.req.json<{ subdomain?: string }>().catch(() => ({}))
     const status = await startLocaltunnel(state.port, body.subdomain)
     return c.json(status)
 })

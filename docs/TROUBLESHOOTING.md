@@ -8,62 +8,54 @@
 
 **Symptoms / 症状:**
 ```
-429: Rate limited >> account@gmail.com
+429: Rate limited >> [邮箱]
 ```
 
 **Causes / 原因:**
-- Account quota exhausted / 账户配额耗尽
-- Too many concurrent requests / 并发请求过多
-- Sending requests too fast / 请求过快
+- Account or organization quota is exhausted / 账号或组织配额已耗尽
+- Short-term rate limiting or temporary model capacity limits / 短时限速或模型容量限制
+- Request concurrency is higher than the authorized plan allows / 并发高于已授权计划
 
 **Solutions / 解决方案:**
-1. Add more accounts in Quota dashboard / 在配额面板添加更多账户
-2. Wait for quota reset (check reset time in Quota) / 等待配额重置
-3. Reduce request frequency / 降低请求频率
-4. Check console for rotation logs:
-   ```
-   429: Rate limited >> account1@gmail.com    (red)
-   → Switching to: account2@gmail.com         (yellow)
-   200: from claude-opus > Antigravity >> account2  (green)
-   ```
+1. Reduce request frequency and concurrency / 降低请求频率与并发
+2. Respect `Retry-After` and the reset time shown in Quota / 遵守 `Retry-After` 与配额面板显示的重置时间
+3. Verify that the configured accounts are owned or authorized for this use / 确认账号由本人拥有或获得明确授权
+4. Purchase or request additional authorized capacity from the provider when needed / 需要时向提供商购买或申请更多获授权容量
+5. Do **not** create free-tier accounts or add accounts to evade a limit / **不要** 通过创建免费账号或加号来规避限制
+
+Console example / 控制台示例:
+```
+429: Rate limited >> [邮箱]
+→ Cooling down authorized account
+```
 
 ---
 
-### 2. ngrok Connection Failed / ngrok 连接失败
+### 2. Tunnel / Remote Access Issues / 远程隧道问题
 
 **Symptoms / 症状:**
 ```
-ERROR  Failed to get ngrok URL after 15 attempts
+Set ANTI_API_PUBLIC_TOKEN before starting a tunnel.
 ```
+or the tunnel starts but management pages remain local-only.
 
 **Causes / 原因:**
-- Previous ngrok process still running / 之前的 ngrok 进程仍在运行
-- Port 4040 occupied / 端口 4040 被占用
-- ngrok authtoken invalid or missing / authtoken 无效或缺失
+- Public inference token is not configured / 未配置公开推理 Token
+- ngrok is not installed or its authtoken is invalid / 未安装 ngrok 或 authtoken 无效
+- Tunnel is intentionally limited to the inference-only gateway / 隧道仅暴露推理网关
 
 **Solutions / 解决方案:**
-
-1. Kill existing ngrok processes:
+1. Configure a long random public token:
    ```bash
-   killall ngrok
+   export ANTI_API_PUBLIC_TOKEN='replace-with-a-long-random-secret'
    ```
-
-2. Check port 4040:
-   ```bash
-   lsof -i :4040
-   # Kill if occupied:
-   kill -9 <PID>
+2. Install the tunnel binary yourself from its official distribution; Anti-API no longer downloads ngrok automatically.
+3. Start the tunnel from `http://localhost:8964/remote-panel`. It targets the public inference port (default `8966`), not the dashboard.
+4. Clients must send:
+   ```http
+   Authorization: Bearer replace-with-a-long-random-secret
    ```
-
-3. Verify authtoken in Remote panel:
-   - Go to `http://localhost:8964/remote-panel`
-   - Enter your ngrok authtoken
-   - Click Start
-
-4. Try manual start:
-   ```bash
-   ngrok http 8964
-   ```
+5. If an old tunnel process is still running, stop it from the Remote panel. Do not use process-wide `killall` unless you intentionally manage the process yourself.
 
 ---
 
@@ -79,19 +71,10 @@ ERROR  Failed to get ngrok URL after 15 attempts
 - Certificate validation issues / 证书验证问题
 
 **Solutions / 解决方案:**
-
-1. Click **Refresh** button to retry / 点击刷新按钮重试
-
-2. Re-authenticate account:
-   - Delete account in Quota panel
-   - Re-add via OAuth
-
-3. Check console for errors:
-   ```
-   [warn] Antigravity quota fetch failed: ...
-   ```
-
-4. Ensure Antigravity is running and authenticated
+1. Click **Refresh** in the Quota panel
+2. Re-authenticate only accounts you own or administer
+3. Install the correct enterprise CA if TLS validation fails; do not disable certificate verification as a first response
+4. Check console warnings for the specific provider quota fetch
 
 ---
 
@@ -99,64 +82,39 @@ ERROR  Failed to get ngrok URL after 15 attempts
 
 **Symptoms / 症状:**
 - Browser opens but login fails
-- "Access Denied" error
-- Redirect loop
+- Access denied or redirect loop
 
 **Solutions / 解决方案:**
-
-1. Use correct Google account with Antigravity access
-
-2. Check if port 51121 is available:
-   ```bash
-   lsof -i :51121
-   ```
-
-3. Try logging in via Antigravity app first
-
-4. Clear browser cookies and retry
+1. Use an account that you own or are authorized to administer
+2. Confirm the OAuth callback port is free and mapped only on loopback by default
+3. Prefer a local browser on the same machine for callback-based providers
+4. For Docker on a remote host, use SSH port forwarding or the provider's device-code flow when available
 
 ---
 
 ### 5. Streaming Not Working / 流式响应不工作
 
 **Symptoms / 症状:**
-- Response comes all at once
+- Response arrives all at once
 - No incremental updates
 
 **Solutions / 解决方案:**
-
-1. Ensure `stream: true` in request:
-   ```json
-   {"model": "...", "messages": [...], "stream": true}
-   ```
-
-2. Check client supports SSE (Server-Sent Events)
-
-3. Check for proxy/firewall blocking chunked transfer
+1. Ensure the request sets `"stream": true`
+2. Confirm the client supports Server-Sent Events
+3. Check proxies or firewalls that buffer chunked responses
 
 ---
 
 ### 6. Tool Calling Errors / 工具调用错误
 
 **Symptoms / 症状:**
-- `tool_calls` not returned
-- Arguments parsing fails
+- `tool_calls` missing
+- Argument parsing fails
 
 **Solutions / 解决方案:**
-
-1. Verify tool schema format:
-   ```json
-   {
-     "type": "function",
-     "function": {
-       "name": "tool_name",
-       "description": "...",
-       "parameters": {"type": "object", "properties": {...}}
-     }
-   }
-   ```
-
-2. Use a model that supports tools (Claude, Gemini Pro)
+1. Verify the tool schema matches the OpenAI or Anthropic format expected by the client
+2. Use a model that supports tool calling for that provider
+3. Check translator logs for schema cleaning or validation failures
 
 ---
 
@@ -166,31 +124,33 @@ ERROR  Failed to get ngrok URL after 15 attempts
 ```
 Error: Port 8964 already in use
 ```
+or
+```
+ANTI_API_HOST must be a loopback address
+```
 
 **Solutions / 解决方案:**
-
-1. Kill existing process:
-   ```bash
-   # macOS/Linux
-   lsof -ti :8964 | xargs kill -9
-   
-   # Windows
-   netstat -ano | findstr :8964
-   taskkill /PID <PID> /F
-   ```
-
-2. Use a different port:
+1. Stop the existing Anti-API process or choose another local port:
    ```bash
    bun run src/main.ts start --port 8080
    ```
+2. Keep the full control plane on loopback. For LAN or tunnel access, configure:
+   ```bash
+   export ANTI_API_PUBLIC_TOKEN='replace-with-a-long-random-secret'
+   export ANTI_API_PUBLIC_PORT=8966
+   ```
+3. Docker Compose publishes management ports to host loopback by default. Do not publish them to all interfaces.
 
 ---
 
 ## Getting Help / 获取帮助
 
-1. Check console logs for detailed error messages
-2. Enable debug mode by setting `consola.level = 4` in `server.ts`
-3. Open an issue on GitHub with:
-   - Error message
+1. Check local console logs after redacting credentials
+2. Enable verbose mode with `bun run src/main.ts start -v`
+3. Open a GitHub issue with:
+   - Error message without secrets
    - Steps to reproduce
-   - Console output
+   - Version or commit
+   - Whether the failure is on the local control plane or the public inference gateway
+
+Do not paste access tokens, refresh tokens, account files, or unredacted logs into public issues. Use the private reporting process in `SECURITY.md` for security findings.

@@ -721,8 +721,8 @@
         <!-- Footer -->
         <div class="mt-8 text-center text-gray-600 text-xs">
             © 2025 <a href="https://github.com/silas" target="_blank"
-                class="hover:text-gray-400 transition-colors">Silas</a> · <a href="https://github.com/silas/anti-api"
-                target="_blank" class="hover:text-gray-400 transition-colors">github.com/silas/anti-api</a>
+                class="hover:text-gray-400 transition-colors">Silas</a> · <a href="https://github.com/ink1ing/anti-api"
+                target="_blank" class="hover:text-gray-400 transition-colors">github.com/ink1ing/anti-api</a>
         </div>
     </div>
 
@@ -827,7 +827,7 @@
                         <div class="px-3 py-2"></div>
                         <div class="px-2 py-2 text-center" data-i18n="quota.capQuota">Quota</div>
                         <div class="px-2 py-2 text-center" data-i18n="quota.capProxy">Proxy</div>
-                        <div class="px-2 py-2 text-center" data-i18n="quota.capMultiAccount">Multi-account</div>
+                        <div class="px-2 py-2 text-center" data-i18n="quota.capMultiAccount">Authorized accounts</div>
                     </div>
                     <div class="divide-y divide-[#2f253f]/70 text-xs">
                         <div class="grid grid-cols-[1.2fr_repeat(3,1fr)] items-center">
@@ -1079,8 +1079,8 @@
                 'quota.ideLoggedOut': 'IDE logged out',
                 'quota.addAccountTitle': 'Add Account',
                 'quota.capQuota': 'Quota monitoring',
-                'quota.capProxy': 'Reverse proxy',
-                'quota.capMultiAccount': 'Multi-account',
+                'quota.capProxy': 'Protocol compatibility',
+                'quota.capMultiAccount': 'Authorized accounts',
                 'quota.openBrowserCode': 'Open the browser and enter this code:',
                 'quota.openVerificationPage': 'Open verification page',
                 'quota.ideLogoutWarningTitle': 'Warning:',
@@ -1646,7 +1646,7 @@
                 const data = await res.json();
                 if (data.loggedIn) {
                     const display = window._privacyMode ? maskEmail(data.email) : data.email;
-                    el.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5 align-middle"></span>${t('quota.ideStatusLoggedIn', { email: `<span class="font-medium text-gray-200">${display}</span>` })}`;
+                    el.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5 align-middle"></span>${t('quota.ideStatusLoggedIn', { email: `<span class="font-medium text-gray-200">${escapeHtml(display)}</span>` })}`;
                 } else {
                     el.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-gray-600 mr-1.5 align-middle"></span>${t('quota.ideStatusNotLoggedIn')}`;
                 }
@@ -2321,6 +2321,15 @@
             showToast(t('quota.copiedModel', { model: modelId }));
         }
 
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-delete-account]');
+            if (!button) return;
+            event.stopPropagation();
+            const card = button.closest('[data-account-id]');
+            if (!card) return;
+            deleteAccount(card.dataset.accountId || '', card.dataset.displayName || card.dataset.accountId || '');
+        });
+
         async function deleteAccount(accountId, displayName) {
             if (!confirm(t('quota.removeConfirm', { name: displayName }))) return;
 
@@ -2389,15 +2398,15 @@
             const providerLogo = getProviderLogo(provider, cardId);
 
             return `
-                <div class="card-3d" data-provider="${provider}" data-card-id="${cardId}" data-account-id="${account.accountId}" data-display-name="${displayName}">
+                <div class="card-3d" data-provider="${escapeHtml(provider)}" data-card-id="${escapeHtml(cardId)}" data-account-id="${escapeHtml(account.accountId)}" data-display-name="${escapeHtml(displayName)}">
                     <div class="card-inner rounded-2xl p-5">
                         <div class="flex items-center justify-between mb-4">
                             <div class="flex items-center gap-2">
                                 ${providerLogo}
-                                <div class="text-sm font-bold text-gray-300">${maskedName}</div>
+                                <div class="text-sm font-bold text-gray-300">${escapeHtml(maskedName)}</div>
                             </div>
                             <div class="flex items-center gap-2">
-                                <button onclick="event.stopPropagation(); deleteAccount('${account.accountId}', '${displayName}')"
+                                <button type="button" data-delete-account="1"
                                         class="text-gray-600 hover:text-red-500 transition-colors text-xs px-1" data-i18n-title="quota.removeAccountLabel" title="Remove account">✕</button>
                             </div>
                         </div>

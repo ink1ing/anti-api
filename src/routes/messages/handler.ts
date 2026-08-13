@@ -116,7 +116,7 @@ export async function handleCompletion(c: Context): Promise<Response> {
             })
         } catch (error) {
             if (error instanceof RoutingError) {
-                return c.json({ error: { type: "invalid_request_error", message: error.message } }, error.status)
+                return c.json({ error: { type: "invalid_request_error", message: error.message } }, error.status as any)
             }
             throw error
         }

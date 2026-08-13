@@ -7,7 +7,9 @@
 import { defineCommand, runMain } from "citty"
 import consola from "consola"
 
-import { server } from "./server"
+import { server, publicServer } from "./server"
+import { getPublicGatewayHost, getPublicGatewayPort, getPublicGatewayToken } from "./lib/public-access"
+import { isLoopbackAddress } from "./lib/local-request"
 import { setupAntigravityToken } from "./lib/token"
 import { getLanguageServerInfo } from "./lib/port-finder"
 import { state } from "./lib/state"
@@ -16,6 +18,32 @@ import { getProjectID } from "./services/antigravity/oauth"
 import { accountManager } from "./services/antigravity/account-manager"
 import { getSetting } from "./services/settings"
 import { logoutIdeSession, getIdeAuthStatus } from "./services/antigravity/ide-switch"
+
+function getLocalHost(): string {
+    const host = process.env.ANTI_API_HOST?.trim() || "[IP]"
+    if (!isLoopbackAddress(host)) {
+        if (process.env.ANTI_API_CONTAINER_CONTROL_PLANE === "1" && host === "0.0.0.0") {
+            return host
+        }
+        throw new Error("ANTI_API_HOST must be a loopback address. Use ANTI_API_PUBLIC_HOST/PORT/TOKEN for LAN or tunnel inference.")
+    }
+    return host
+}
+
+function startPublicGateway(localPort: number): { port: number; stop: () => void } | null {
+    const token = getPublicGatewayToken()
+    if (!token) return null
+
+    const port = getPublicGatewayPort(localPort)
+    const serverInstance = Bun.serve({
+        fetch: publicServer.fetch,
+        hostname: getPublicGatewayHost(),
+        port,
+        idleTimeout: 120,
+    })
+    consola.info(`Public inference gateway: http://${getPublicGatewayHost()}:${port}`)
+    return { port, stop: () => serverInstance.stop(true) }
+}
 
 /**
  * 打开浏览器
@@ -79,9 +107,9 @@ const start = defineCommand({
         // 尝试加载已保存的 OAuth 认证
         initAuth()
 
-        // 如果没有 OAuth 认证，尝试从本地 IDE 读取 token（作为 fallback）
-        if (!state.accessToken) {
-            consola.info("OAuth auth not found, trying to load from local Antigravity IDE...")
+        // Reading another application's IDE token is opt-in.
+        if (!state.accessToken && process.env.ANTI_API_IMPORT_ANTIGRAVITY_IDE_ON_START === "1") {
+            consola.info("OAuth auth not found; importing the local Antigravity IDE token by explicit configuration...")
             try {
                 await setupAntigravityToken()
             } catch (error) {
@@ -114,13 +142,14 @@ const start = defineCommand({
         const { logStartup, logStartupSuccess } = await import("./lib/logger")
         logStartup(state.port)
 
-        // 启动服务器
+        // The complete control plane is loopback-only.
         Bun.serve({
             fetch: server.fetch,
-            hostname: process.env.ANTI_API_HOST || "127.0.0.1",
+            hostname: getLocalHost(),
             port: state.port,
-            idleTimeout: 120,  // 2分钟超时，适应慢速 API 响应
+            idleTimeout: 120,
         })
+        startPublicGateway(state.port)
 
         logStartupSuccess(state.port)
 
@@ -148,15 +177,15 @@ const start = defineCommand({
     },
 })
 
-// 添加账号命令 - 用于多账号轮换
+// 添加明确获授权管理的账号
 const addAccount = defineCommand({
     meta: {
         name: "add-account",
-        description: "添加额外的 Google 账号用于配额轮换",
+        description: "添加本人拥有或获授权管理的 Google 账号",
     },
     async run() {
-        consola.info("Adding a new account...")
-        consola.info("Tip: Add multiple accounts to rotate when quota is exhausted and avoid 429 errors")
+        consola.info("Adding an authorized account...")
+        consola.info("Respect provider terms, Retry-After, and per-user or per-organization quota limits.")
 
         // 加载现有账号
         accountManager.load()
@@ -180,7 +209,7 @@ const addAccount = defineCommand({
             })
 
             consola.success(`Account added: ${result.email}`)
-            consola.info(`Now ${accountManager.count()} accounts available for rotation`)
+            consola.info(`Anti-API now manages ${accountManager.count()} authorized account(s)`)
         } else {
             consola.error(`Failed to add account: ${result.error}`)
         }
@@ -210,115 +239,65 @@ const listAccounts = defineCommand({
     },
 })
 
-// Remote 命令 - 启动服务器并创建公共隧道
+// Remote command: expose only the authenticated inference gateway.
 const remote = defineCommand({
     meta: {
         name: "remote",
-        description: "启动Anti-API并创建公共访问隧道",
+        description: "启动本地控制面和带认证的公共推理隧道",
     },
     args: {
         port: {
             type: "string",
             default: "8964",
-            description: "监听端口",
+            description: "本地控制面端口",
             alias: "p",
-        },
-        subdomain: {
-            type: "string",
-            default: "",
-            description: "自定义子域名(可选)",
-            alias: "s",
         },
     },
     async run({ args }) {
-        const { spawn } = await import("child_process")
+        if (!getPublicGatewayToken()) {
+            consola.error("Set ANTI_API_PUBLIC_TOKEN before starting a public tunnel.")
+            process.exitCode = 1
+            return
+        }
 
         state.port = parseInt(args.port, 10)
         state.verbose = true
         consola.level = 0
-
-        // 初始化认证
         initAuth()
-        await setupAntigravityToken()
 
-        // 获取language_server信息 (用于配额查询)
-        const lsInfo = await getLanguageServerInfo()
-        if (lsInfo) {
-            state.languageServerPort = lsInfo.port
-            state.csrfToken = lsInfo.csrfToken
-        }
-
-        // 启动服务器
         Bun.serve({
             fetch: server.fetch,
-            hostname: process.env.ANTI_API_HOST || "127.0.0.1",
+            hostname: getLocalHost(),
             port: state.port,
             idleTimeout: 120,
         })
-
-        consola.success(`Anti-API local server started: http://localhost:${state.port}`)
-
-        // 使用 ngrok 创建隧道
-        consola.info("Creating ngrok tunnel...")
-
-        const ngrok = spawn("ngrok", ["http", state.port.toString(), "--log", "stdout"], {
-            stdio: ["ignore", "pipe", "pipe"]
-        })
-
-        // 等待 ngrok 启动并获取 URL（重试机制）
-        let tunnelUrl = ""
-        for (let i = 0; i < 10; i++) {
-            await new Promise(resolve => setTimeout(resolve, 2000))
-            try {
-                const apiRes = await fetch("http://localhost:4040/api/tunnels")
-                const data = await apiRes.json() as any
-                tunnelUrl = data.tunnels?.[0]?.public_url || ""
-                if (tunnelUrl) {
-                    state.publicUrl = tunnelUrl
-                    break
-                }
-            } catch (e) {
-                // 继续重试
-            }
-            consola.info(`Waiting for ngrok... (${i + 1}/10)`)
+        const publicGateway = startPublicGateway(state.port)
+        if (!publicGateway) {
+            consola.error("Public inference gateway is not configured.")
+            process.exitCode = 1
+            return
         }
 
-        if (tunnelUrl) {
-            consola.box({
-                title: "🌍 Anti-API 公共端点已就绪",
-                message: `
-公共 URL: ${tunnelUrl}
-
-本地面板: http://localhost:${state.port}/quota
-公共面板: ${tunnelUrl}/quota
-
-API 端点: ${tunnelUrl}/v1/messages
-
-✅ 直接可用，无需确认！
-                `.trim(),
-                style: {
-                    borderColor: "green",
-                }
-            })
-        } else {
-            consola.error("ngrok failed to start, check configuration")
-            process.exit(1)
+        consola.success(`Local dashboard: http://localhost:${state.port}/quota`)
+        consola.info("Creating a third-party tunnel to the inference-only gateway...")
+        const { startNgrok, stopNgrok } = await import("./services/tunnel-manager")
+        const result = await startNgrok(state.port)
+        if (!result.url) {
+            consola.error(result.error || "ngrok failed to start")
+            process.exitCode = 1
+            return
         }
 
-        ngrok.on("close", (code: number) => {
-            consola.warn("ngrok closed, exit code:", code)
-            process.exit(0)
+        state.publicUrl = result.url
+        consola.box({
+            title: "Anti-API public inference gateway",
+            message: `API URL: ${result.url}/v1/messages\n\nThe dashboard and control-plane routes remain local-only. Clients must send ANTI_API_PUBLIC_TOKEN as a Bearer token or x-api-key.`,
+            style: { borderColor: "green" },
         })
 
-        ngrok.on("error", (err: Error) => {
-            consola.error("ngrok failed to start:", err.message)
-            process.exit(1)
-        })
-
-        // 保持进程运行
         process.on("SIGINT", () => {
-            consola.info("Shutting down...")
-            ngrok.kill()
+            stopNgrok()
+            publicGateway.stop()
             process.exit(0)
         })
     },
@@ -330,8 +309,20 @@ const logoutIde = defineCommand({
         name: "logout-ide",
         description: "登出 Antigravity IDE 当前账号（关闭 IDE + 清除认证）",
     },
-    args: {},
-    async run() {
+    args: {
+        yes: {
+            type: "boolean",
+            default: false,
+            description: "确认关闭 IDE 并删除 state.vscdb 认证键",
+            alias: "y",
+        },
+    },
+    async run({ args }) {
+        if (!args.yes) {
+            consola.error("This action closes Antigravity and removes its authentication keys from state.vscdb. Re-run with --yes to confirm.")
+            process.exitCode = 1
+            return
+        }
         // 显示当前 IDE 登录状态
         const current = getIdeAuthStatus()
         if (current.loggedIn) {

@@ -16,6 +16,7 @@ process.env.ANTI_API_DATA_DIR = tempDataDir
 
 const serverPromise = import(`../src/server.ts?${Date.now()}-${Math.random()}`).then(mod => mod.server)
 const REMOVED_MESSAGE = "Credential bundle export/import has been removed."
+const LOCAL_HEADERS = { host: "localhost:8964" }
 
 afterAll(() => {
     rmSync(tempHome, { recursive: true, force: true })
@@ -29,7 +30,7 @@ afterAll(() => {
 
 test("bundle export endpoint is disabled", async () => {
     const server = await serverPromise
-    const res = await server.request("/bundle/export")
+    const res = await server.request("/bundle/export", { headers: LOCAL_HEADERS })
     expect(res.status).toBe(410)
     expect(await res.json()).toEqual({ success: false, error: REMOVED_MESSAGE })
 })
@@ -38,7 +39,7 @@ test("bundle import endpoint is disabled", async () => {
     const server = await serverPromise
     const res = await server.request("/bundle/import", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { ...LOCAL_HEADERS, "content-type": "application/json" },
         body: JSON.stringify({}),
     })
     expect(res.status).toBe(410)
@@ -47,7 +48,7 @@ test("bundle import endpoint is disabled", async () => {
 
 test("auth export endpoint is disabled", async () => {
     const server = await serverPromise
-    const res = await server.request("/auth/export")
+    const res = await server.request("/auth/export", { headers: LOCAL_HEADERS })
     expect(res.status).toBe(410)
     expect(await res.json()).toEqual({ success: false, error: REMOVED_MESSAGE })
 })
@@ -56,7 +57,7 @@ test("auth import endpoint is disabled", async () => {
     const server = await serverPromise
     const res = await server.request("/auth/import", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { ...LOCAL_HEADERS, "content-type": "application/json" },
         body: JSON.stringify({ accounts: [] }),
     })
     expect(res.status).toBe(410)
@@ -65,7 +66,7 @@ test("auth import endpoint is disabled", async () => {
 
 test("auth status endpoint is still available", async () => {
     const server = await serverPromise
-    const res = await server.request("/auth/status")
+    const res = await server.request("/auth/status", { headers: LOCAL_HEADERS })
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(typeof body.authenticated).toBe("boolean")
@@ -79,7 +80,7 @@ test("diagnostics endpoint rejects non-local hosts", async () => {
     expect(res.status).toBe(403)
     expect(await res.json()).toEqual({
         success: false,
-        error: "Diagnostics is only available from localhost.",
+        error: "The local control plane is only available through a loopback host and origin.",
     })
 })
 
@@ -91,6 +92,6 @@ test("updates endpoint rejects non-local hosts", async () => {
     expect(res.status).toBe(403)
     expect(await res.json()).toEqual({
         success: false,
-        error: "Updates are only available from localhost.",
+        error: "The local control plane is only available through a loopback host and origin.",
     })
 })

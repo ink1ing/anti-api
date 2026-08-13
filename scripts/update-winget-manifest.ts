@@ -59,8 +59,8 @@ PackageName: ${packageName}
 PackageUrl: https://github.com/ink1ing/anti-api
 License: MIT
 LicenseUrl: https://github.com/ink1ing/anti-api/blob/main/LICENSE
-ShortDescription: Local OpenAI/Anthropic-compatible proxy for Antigravity, Codex, GitHub Copilot, and Zed.
-Description: Anti-API exposes Antigravity, Codex, GitHub Copilot, and Zed hosted models through local OpenAI-compatible and Anthropic-compatible endpoints with routing, quota monitoring, and account switching.
+ShortDescription: Independent local protocol-compatibility proxy for authorized provider connections.
+Description: Anti-API provides local OpenAI-compatible and Anthropic-compatible protocol translation, explicit account management, routing, and quota visibility for configured provider connections. It is independent and not provider-endorsed.
 Moniker: anti-api
 Tags:
 - ai

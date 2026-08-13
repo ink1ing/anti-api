@@ -1,6 +1,5 @@
 import consola from "consola"
 import { readdirSync, readFileSync } from "fs"
-import https from "https"
 import { authStore } from "~/services/auth/store"
 import type { ProviderAccount } from "~/services/auth/types"
 
@@ -18,100 +17,22 @@ type JsonResponse = {
     text: string
 }
 
-function isCertificateError(error: unknown): boolean {
-    if (!error || typeof error !== "object") return false
-    const code = (error as { code?: string }).code
-    if (code === "UNKNOWN_CERTIFICATE_VERIFICATION_ERROR") return true
-    const message = String((error as { message?: string }).message || "")
-    return message.toLowerCase().includes("certificate")
-}
-
 async function fetchJsonWithFallback(
     url: string,
     options: { method?: string; headers?: Record<string, string>; body?: string }
 ): Promise<JsonResponse> {
-    try {
-        const response = await fetch(url, {
-            method: options.method,
-            headers: options.headers,
-            body: options.body,
-        })
-        const text = await response.text()
-        let data: any = null
-        if (text) {
-            try {
-                data = JSON.parse(text)
-            } catch {
-                data = null
-            }
-        }
-        return { status: response.status, data, text }
-    } catch (error) {
-        if (!isCertificateError(error)) {
-            throw error
-        }
-        return fetchInsecureJson(url, options)
-    }
-}
-
-async function fetchInsecureJson(
-    url: string,
-    options: { method?: string; headers?: Record<string, string>; body?: string }
-): Promise<JsonResponse> {
-    const target = new URL(url)
-    const method = options.method || "GET"
-    const headers = {
-        "User-Agent": "anti-api",
-        ...(options.headers || {}),
-    }
-    const insecureAgent = new https.Agent({ rejectUnauthorized: false })
-
-    return new Promise((resolve, reject) => {
-        const req = https.request(
-            {
-                protocol: target.protocol,
-                hostname: target.hostname,
-                port: target.port || 443,
-                path: `${target.pathname}${target.search}`,
-                method,
-                headers,
-                agent: insecureAgent,
-                rejectUnauthorized: false,
-                timeout: 10000,
-            },
-            (res) => {
-                let body = ""
-                res.on("data", (chunk) => {
-                    body += chunk
-                })
-                res.on("end", () => {
-                    let data: any = null
-                    if (body) {
-                        try {
-                            data = JSON.parse(body)
-                        } catch {
-                            data = null
-                        }
-                    }
-                    resolve({
-                        status: res.statusCode || 0,
-                        data,
-                        text: body,
-                    })
-                })
-            }
-        )
-
-        req.on("error", reject)
-        req.on("timeout", () => {
-            req.destroy(new Error("Request timed out"))
-        })
-
-        if (options.body) {
-            req.write(options.body)
-        }
-        req.end()
+    const response = await fetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+        signal: AbortSignal.timeout(10_000),
     })
+    const text = await response.text()
+    let data: any = null
+    if (text) {
+        try { data = JSON.parse(text) } catch { }
+    }
+    return { status: response.status, data, text }
 }
 
 export interface CopilotDeviceCode {

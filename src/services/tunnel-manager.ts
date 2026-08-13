@@ -4,16 +4,15 @@
  */
 
 import { spawn, type ChildProcess } from "child_process"
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import { join } from "path"
 import consola from "consola"
-import { ensureDataDir, getDataDir, getLegacyProjectDataDir } from "~/lib/data-dir"
-import { tmpdir } from "os"
+import { getDataDir, getLegacyProjectDataDir } from "~/lib/data-dir"
+import { writePrivateFile } from "~/lib/private-file"
+import { getPublicGatewayPort, getPublicGatewayToken } from "~/lib/public-access"
 
 const CONFIG_FILE = join(getDataDir(), "remote-config.json")
 const LEGACY_CONFIG_FILE = join(getLegacyProjectDataDir(), "remote-config.json")
-const NGROK_DIR = join(getDataDir(), "bin")
-const NGROK_BIN = join(NGROK_DIR, "ngrok")
 
 interface TunnelConfig {
     ngrokAuthtoken?: string
@@ -74,57 +73,10 @@ function loadConfig(): TunnelConfig {
  */
 function saveConfig(config: TunnelConfig): void {
     try {
-        ensureDataDir()
-        writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2))
+        writePrivateFile(CONFIG_FILE, JSON.stringify(config, null, 2))
     } catch (e) {
         consola.error("Failed to save config:", e)
     }
-}
-
-function resolveNgrokArch(): string | null {
-    if (process.platform !== "linux") return null
-    if (process.arch === "x64") return "amd64"
-    if (process.arch === "arm64") return "arm64"
-    return null
-}
-
-async function ensureNgrokBinary(): Promise<string> {
-    if (existsSync(NGROK_BIN)) return NGROK_BIN
-
-    const arch = resolveNgrokArch()
-    if (!arch) {
-        throw new Error("ngrok not found; please install ngrok or use a supported platform")
-    }
-
-    ensureDataDir()
-    if (!existsSync(NGROK_DIR)) {
-        mkdirSync(NGROK_DIR, { recursive: true })
-    }
-
-    const url = `https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${arch}.tgz`
-    const response = await fetch(url)
-    if (!response.ok) {
-        throw new Error(`Failed to download ngrok: ${response.status}`)
-    }
-
-    const archivePath = join(tmpdir(), `ngrok-${Date.now()}.tgz`)
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    writeFileSync(archivePath, bytes)
-
-    await new Promise<void>((resolve, reject) => {
-        const proc = spawn("tar", ["-xzf", archivePath, "-C", NGROK_DIR], { stdio: "ignore" })
-        proc.on("close", (code) => {
-            if (code === 0) {
-                resolve()
-            } else {
-                reject(new Error(`Failed to extract ngrok (code ${code})`))
-            }
-        })
-        proc.on("error", reject)
-    })
-
-    chmodSync(NGROK_BIN, 0o755)
-    return NGROK_BIN
 }
 
 /**
@@ -150,17 +102,44 @@ export function getAllTunnelStatus(): Record<string, TunnelStatus> {
     }
 }
 
+interface SavedTunnelConfig {
+    ngrokAuthtokenConfigured: boolean
+    ngrokAuthtokenMasked?: string
+    localtunnelSubdomain?: string
+}
+
+function maskSecret(value: string | undefined): string | undefined {
+    if (!value) return undefined
+    return value.length <= 4 ? "••••" : `••••${value.slice(-4)}`
+}
+
+export function clearSavedNgrokAuthtoken(): void {
+    const config = loadConfig()
+    delete config.ngrokAuthtoken
+    ngrokStability.lastAuthtoken = null
+    saveConfig(config)
+}
+
 /**
- * 获取保存的配置
+ * 获取保存的非敏感配置状态
  */
-export function getSavedConfig(): TunnelConfig {
-    return loadConfig()
+export function getSavedConfig(): SavedTunnelConfig {
+    const config = loadConfig()
+    return {
+        ngrokAuthtokenConfigured: !!config.ngrokAuthtoken,
+        ngrokAuthtokenMasked: maskSecret(config.ngrokAuthtoken),
+        localtunnelSubdomain: config.localtunnelSubdomain,
+    }
 }
 
 /**
  * 启动 Cloudflared 隧道
  */
 export async function startCloudflared(port: number): Promise<TunnelStatus> {
+    if (!getPublicGatewayToken()) {
+        return { active: false, url: null, pid: null, error: "Set ANTI_API_PUBLIC_TOKEN before starting a tunnel." }
+    }
+    port = getPublicGatewayPort(port)
     if (tunnelState.cloudflared.process) {
         return { active: true, url: tunnelState.cloudflared.url, pid: (tunnelState.cloudflared.process as any).pid || null }
     }
@@ -231,6 +210,10 @@ export function stopCloudflared(): TunnelStatus {
  * 启动 ngrok 隧道（带自动重连和健康检查）
  */
 export async function startNgrok(port: number, authtoken?: string): Promise<TunnelStatus> {
+    if (!getPublicGatewayToken()) {
+        return { active: false, url: null, pid: null, error: "Set ANTI_API_PUBLIC_TOKEN before starting a tunnel." }
+    }
+    port = getPublicGatewayPort(port)
     // 如果正在重连中，返回当前状态
     if (ngrokStability.isReconnecting) {
         return {
@@ -261,19 +244,6 @@ export async function startNgrok(port: number, authtoken?: string): Promise<Tunn
         ngrokStability.lastAuthtoken = authtoken
     }
 
-    // Kill any existing ngrok processes first
-    try {
-        spawn("killall", ["ngrok"], { stdio: "ignore" })
-        const findProc = spawn("lsof", ["-ti", ":4040"], { stdio: ["ignore", "pipe", "ignore"] })
-        let pids = ""
-        findProc.stdout?.on("data", (data) => { pids += data.toString() })
-        await new Promise(resolve => findProc.on("close", resolve))
-        for (const pid of pids.trim().split("\n").filter(Boolean)) {
-            spawn("kill", ["-9", pid], { stdio: "ignore" })
-        }
-        await new Promise(resolve => setTimeout(resolve, 2000))
-    } catch { }
-
     if (authtoken) {
         const config = loadConfig()
         config.ngrokAuthtoken = authtoken
@@ -287,36 +257,29 @@ export async function startNgrok(port: number, authtoken?: string): Promise<Tunn
         return { active: false, url: null, pid: null, error: "需要 authtoken，请在 Remote 页面输入" }
     }
 
-    return new Promise(async (resolve) => {
-        const args = ["http", port.toString(), "--authtoken", token, "--log", "stdout"]
-
-        let proc: ChildProcess
-        try {
-            proc = spawn("ngrok", args, {
-                stdio: ["ignore", "pipe", "pipe"]
-            })
-        } catch {
-            try {
-                const ngrokPath = await ensureNgrokBinary()
-                proc = spawn(ngrokPath, args, {
-                    stdio: ["ignore", "pipe", "pipe"]
-                })
-            } catch (error) {
-                const message = (error as Error).message || "ngrok spawn failed"
-                safeResolve({ active: false, url: null, pid: null, error: message })
-                return
-            }
-        }
-
-        tunnelState.ngrok.process = proc
-        ngrokStability.startTime = Date.now()
-
-        let resolved = false  // 🆕 防止重复 resolve
+    return new Promise((resolve) => {
+        let resolved = false
         const safeResolve = (result: TunnelStatus) => {
             if (resolved) return
             resolved = true
             resolve(result)
         }
+        const args = ["http", port.toString(), "--log", "stdout"]
+
+        let proc: ChildProcess
+        try {
+            proc = spawn("ngrok", args, {
+                env: { ...process.env, NGROK_AUTHTOKEN: token },
+                stdio: ["ignore", "pipe", "pipe"]
+            })
+        } catch (error) {
+            const message = (error as Error).message || "ngrok is not installed"
+            safeResolve({ active: false, url: null, pid: null, error: `${message}. Install ngrok from its official distribution.` })
+            return
+        }
+
+        tunnelState.ngrok.process = proc
+        ngrokStability.startTime = Date.now()
 
         let attempts = 0
         const maxAttempts = 10  // 🆕 减少到 10 次（20秒超时）
@@ -469,6 +432,10 @@ export function stopNgrok(): TunnelStatus {
  * 启动 localtunnel 隧道
  */
 export async function startLocaltunnel(port: number, subdomain?: string): Promise<TunnelStatus> {
+    if (!getPublicGatewayToken()) {
+        return { active: false, url: null, pid: null, error: "Set ANTI_API_PUBLIC_TOKEN before starting a tunnel." }
+    }
+    port = getPublicGatewayPort(port)
     if (tunnelState.localtunnel.process) {
         return { active: true, url: tunnelState.localtunnel.url, pid: (tunnelState.localtunnel.process as any).pid || null }
     }

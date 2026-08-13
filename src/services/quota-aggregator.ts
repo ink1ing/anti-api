@@ -1,5 +1,4 @@
 import consola from "consola"
-import https from "https"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { authStore } from "~/services/auth/store"
@@ -427,7 +426,7 @@ async function refreshCodexIfNeeded(account: ProviderAccount): Promise<ProviderA
 }
 
 async function fetchCodexUsage(account: ProviderAccount): Promise<AccountBar[]> {
-    const response = await fetchInsecureJson("https://chatgpt.com/backend-api/wham/usage", {
+    const response = await fetchSecureJson("https://chatgpt.com/backend-api/wham/usage", {
         method: "GET",
         headers: {
             Authorization: `Bearer ${account.accessToken}`,
@@ -583,7 +582,7 @@ function buildZedHostedBar(data: Awaited<ReturnType<typeof fetchZedAccountOvervi
 async function fetchCopilotPremium(account: ProviderAccount): Promise<AccountBar> {
     let response: InsecureResponse
     try {
-        response = await fetchInsecureJson("https://api.github.com/copilot_internal/user", {
+        response = await fetchSecureJson("https://api.github.com/copilot_internal/user", {
             method: "GET",
             headers: {
                 Authorization: `Bearer ${account.accessToken}`,
@@ -649,62 +648,20 @@ type InsecureResponse = {
     text: string
 }
 
-async function fetchInsecureJson(
+async function fetchSecureJson(
     url: string,
     options: { method?: string; headers?: Record<string, string>; body?: string }
 ): Promise<InsecureResponse> {
-    const target = new URL(url)
-    const method = options.method || "GET"
-    const headers = {
-        "User-Agent": "anti-api",
-        ...(options.headers || {}),
-    }
-    const insecureAgent = new https.Agent({ rejectUnauthorized: false })
-
-    return new Promise((resolve, reject) => {
-        const req = https.request(
-            {
-                protocol: target.protocol,
-                hostname: target.hostname,
-                port: target.port || 443,
-                path: `${target.pathname}${target.search}`,
-                method,
-                headers,
-                agent: insecureAgent,
-                rejectUnauthorized: false,
-                timeout: 10000,
-            },
-            (res) => {
-                let body = ""
-                res.on("data", (chunk) => {
-                    body += chunk
-                })
-                res.on("end", () => {
-                    let data: any = null
-                    if (body) {
-                        try {
-                            data = JSON.parse(body)
-                        } catch {
-                            data = null
-                        }
-                    }
-                    resolve({
-                        status: res.statusCode || 0,
-                        data,
-                        text: body,
-                    })
-                })
-            }
-        )
-
-        req.on("error", reject)
-        req.on("timeout", () => {
-            req.destroy(new Error("Request timed out"))
-        })
-
-        if (options.body) {
-            req.write(options.body)
-        }
-        req.end()
+    const response = await fetch(url, {
+        method: options.method,
+        headers: { "User-Agent": "anti-api", ...(options.headers || {}) },
+        body: options.body,
+        signal: AbortSignal.timeout(10_000),
     })
+    const text = await response.text()
+    let data: any = null
+    if (text) {
+        try { data = JSON.parse(text) } catch { }
+    }
+    return { status: response.status, data, text }
 }

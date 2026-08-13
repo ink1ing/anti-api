@@ -37,16 +37,17 @@ Hosted providers are wired through `src/services/routing/router.ts` (dispatch),
 
 - Reverse proxy: `https://cli-chat-proxy.grok.com/v1/responses` (OpenAI Responses API).
 - Required headers: `x-grok-client-version`, `x-grok-client-identifier`.
-- Credentials are imported from the local Grok CLI session (`~/.grok/auth.json`)
-  and auto-refreshed — no standalone login flow (reduces account-ban risk).
+- Credentials can be imported from the local Grok CLI session (`~/.grok/auth.json`)
+  after explicit user action; no standalone login flow is provided. Provider policy,
+  quota, and account-enforcement decisions still apply.
 - Exposed models: `grok-build` (panel label **Xbuild**, maps to the real
   **Grok 4.3** model) and `grok-composer-2.5-fast` (Composer 2.5 Fast).
 - Code: `src/services/grok/oauth.ts`, `src/services/grok/chat.ts`.
 
 ## Maintenance Notes
 
-- **Secret-scanning alerts for built-in provider OAuth credentials** (e.g.
-  `src/services/antigravity/oauth.ts`) are expected. These are public
-  "installed application" client credentials shipped inside the upstream client,
-  not confidential or personal secrets, and are required for the OAuth flow.
-  Resolve such alerts as `wont_fix` — do not rotate or remove them.
+- **Review every secret-scanning alert individually.** For an OAuth installed-app
+  identifier, verify from provider documentation whether it is intentionally public
+  and whether reuse is permitted. Record the source, scope, authorization basis, and
+  review result. Never commit personal credentials or confidential client secrets;
+  remove and rotate any value whose confidentiality or authorization is uncertain.

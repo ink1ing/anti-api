@@ -396,21 +396,23 @@ export async function createGrokCompletion(
         lastError = error
         if (error instanceof UpstreamError && isAuthStatus(error) && !refreshedOnce) {
             refreshedOnce = true
-            // 先从 ~/.grok/auth.json 重新导入（Grok CLI 已续期）
-            try {
-                const imported = await importGrokAuthSources()
-                const updated = imported.accounts.find(acc => acc.id === effectiveAccount.id || (acc.email && acc.email === effectiveAccount.email))
-                if (updated?.accessToken && updated.accessToken !== effectiveAccount.accessToken) {
-                    effectiveAccount.accessToken = updated.accessToken
-                    if (updated.refreshToken) effectiveAccount.refreshToken = updated.refreshToken
-                    if (updated.expiresAt) effectiveAccount.expiresAt = updated.expiresAt
-                    completion = await attempt()
-                    lastError = null
+            // Re-reading another CLI credential store is opt-in.
+            if (process.env.ANTI_API_IMPORT_GROK_ON_AUTH_FAILURE === "1") {
+                // 先从 ~/.grok/auth.json 重新导入（Grok CLI 已续期）
+                try {
+                    const imported = await importGrokAuthSources()
+                    const updated = imported.accounts.find(acc => acc.id === effectiveAccount.id || (acc.email && acc.email === effectiveAccount.email))
+                    if (updated?.accessToken && updated.accessToken !== effectiveAccount.accessToken) {
+                        effectiveAccount.accessToken = updated.accessToken
+                        if (updated.refreshToken) effectiveAccount.refreshToken = updated.refreshToken
+                        if (updated.expiresAt) effectiveAccount.expiresAt = updated.expiresAt
+                        completion = await attempt()
+                        lastError = null
+                    }
+                } catch {
+                    // ignore import failures
                 }
-            } catch {
-                // ignore import failures
             }
-
             // 仍失败则用 refresh_token 兜底
             if (!completion && effectiveAccount.refreshToken) {
                 try {
