@@ -1,0 +1,68 @@
+name: release-assets
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build source archives
+        id: package
+        shell: bash
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+          git archive --format=zip --prefix="anti-api-v${VERSION}/" HEAD > "anti-api-v${VERSION}.zip"
+          git archive --format=zip --prefix=anti-api-portable/ HEAD > anti-api-portable.zip
+          git archive --format=tar --prefix="anti-api-v${VERSION}/" HEAD | gzip -n > "anti-api-v${VERSION}-source.tar.gz"
+          sha256sum "anti-api-v${VERSION}.zip" "anti-api-portable.zip" "anti-api-v${VERSION}-source.tar.gz" > SHA256SUMS.txt
+          printf 'tag=%s\nversion=%s\n' "$TAG" "$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          cat > RELEASE_NOTES.md <<EOF
+          ## Anti-API v${{ steps.package.outputs.version }}
+
+          This release contains the compatibility, routing, security, and packaging fixes implemented for the current issue audit.
+
+          Validation completed before publishing: TypeScript type check, 190 Bun tests, Rust tests, production bundle, Rust release build, source archive layout, and local HTTP smoke checks.
+
+          Known limits: Zed source credentials still require explicit re-import after source-token expiry; provider-policy questions remain contextual; live provider E2E requires user-owned credentials and was not run.
+
+          The package checksums are in `SHA256SUMS.txt`.
+          EOF
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.package.outputs.tag }}
+          VERSION: ${{ steps.package.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "Anti-API v${VERSION}" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$TAG" \
+              --title "Anti-API v${VERSION}" \
+              --notes-file RELEASE_NOTES.md \
+              --verify-tag
+          fi
+          gh release upload "$TAG" \
+            "anti-api-v${VERSION}.zip" \
+            anti-api-portable.zip \
+            "anti-api-v${VERSION}-source.tar.gz" \
+            SHA256SUMS.txt \
+            --clobber

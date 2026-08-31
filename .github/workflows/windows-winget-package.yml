@@ -1,6 +1,9 @@
 name: windows-winget-package
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -38,8 +41,10 @@ jobs:
         id: version
         shell: bash
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "$GITHUB_REF_NAME" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
           else
             VERSION="$(node -p "require('./package.json').version")"
           fi
@@ -93,14 +98,21 @@ jobs:
             dist/anti-api-portable.zip.sha256
 
       - name: Upload to GitHub release
-        if: ${{ github.event.inputs.upload_to_release == 'true' }}
+        if: ${{ github.event_name == 'push' || inputs.upload_to_release == true }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release upload "v${{ steps.version.outputs.version }}" \
-            dist/anti-api-winget-x64.zip \
-            dist/anti-api-winget-x64.zip.sha256 \
-            dist/anti-api-portable.zip \
-            dist/anti-api-portable.zip.sha256 \
-            --clobber
+          TAG="v${{ steps.version.outputs.version }}"
+          for attempt in {1..12}; do
+            if gh release upload "$TAG" \
+              dist/anti-api-winget-x64.zip \
+              dist/anti-api-winget-x64.zip.sha256 \
+              dist/anti-api-portable.zip \
+              dist/anti-api-portable.zip.sha256 \
+              --clobber; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then sleep 10; fi
+          done
+          exit 1
