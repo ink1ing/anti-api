@@ -14,6 +14,7 @@ import { importConfiguredZedAccount, ZedCredentialImportError } from "~/services
 import { importKiroAuthSources } from "~/services/kiro/oauth"
 import { runAccountDiagnostics } from "~/services/auth/diagnostics"
 import { isLoopbackHost } from "~/lib/local-request"
+import { safeErrorMessage } from "~/lib/redaction"
 
 export const authRouter = new Hono()
 
@@ -123,7 +124,7 @@ authRouter.post("/login", async (c) => {
                         },
                     })
                 } catch (error) {
-                    return c.json({ success: false, error: (error as Error).message }, 400)
+                    return c.json({ success: false, error: safeErrorMessage(error) }, 400)
                 }
             }
 
@@ -155,7 +156,7 @@ authRouter.post("/login", async (c) => {
                 account = await importConfiguredZedAccount()
             } catch (error) {
                 if (error instanceof ZedCredentialImportError) {
-                    return c.json({ success: false, error: error.message }, 400)
+                    return c.json({ success: false, error: safeErrorMessage(error) }, 400)
                 }
                 throw error
             }
@@ -301,7 +302,7 @@ authRouter.get("/codex/debug", async (c) => {
         const result = await debugCodexOAuth()
         return c.json({ success: true, ...result })
     } catch (error) {
-        return c.json({ success: false, error: (error as Error).message }, 500)
+        return c.json({ success: false, error: safeErrorMessage(error) }, 500)
     }
 })
 
@@ -313,7 +314,7 @@ authRouter.get("/diagnostics", async (c) => {
         const report = await runAccountDiagnostics()
         return c.json({ success: true, ...report })
     } catch (error) {
-        return c.json({ success: false, error: (error as Error).message }, 500)
+        return c.json({ success: false, error: safeErrorMessage(error) }, 500)
     }
 })
 
@@ -345,6 +346,6 @@ authRouter.post("/ide/logout", async (c) => {
         const result = await logoutIdeSession()
         return c.json(result)
     } catch (error) {
-        return c.json({ success: false, error: (error as Error).message }, 500)
+        return c.json({ success: false, error: safeErrorMessage(error) }, 500)
     }
 })

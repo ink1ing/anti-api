@@ -556,7 +556,8 @@ async function createFlowCompletionWithEntries(request: RoutedRequest, entries: 
         return result
     }
 
-    for (let index = startIndex; index < entries.length; index++) {
+    for (let offset = 0; offset < entries.length; offset++) {
+        const index = (startIndex + offset) % entries.length
         const entry = entries[index]
         if (shouldSkipFlowEntry(entry, entries.length)) {
             continue
@@ -806,7 +807,8 @@ async function* createFlowCompletionStreamWithEntries(request: RoutedRequest, en
         console.log(formatSuccessLine({ elapsed, model: request.model, provider: entry.provider, account: accountDisplay, routeTag: "fr" }))
     }
 
-    for (let index = startIndex; index < entries.length; index++) {
+    for (let offset = 0; offset < entries.length; offset++) {
+        const index = (startIndex + offset) % entries.length
         const entry = entries[index]
         if (shouldSkipFlowEntry(entry, entries.length)) {
             continue
