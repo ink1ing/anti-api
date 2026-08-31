@@ -21,11 +21,15 @@
 
 ## What's New (v3.2.0)
 
-- **Provider compatibility fixes** - Improved Antigravity Gemini 3.1 request encoding, dynamic Copilot/model normalization, reasoning-effort handling, and Responses API multimodal conversion for Zed, Codex, and Grok
-- **OpenAI image inputs** - Anthropic base64 and remote image blocks are validated, bounded, SSRF-protected, and forwarded as provider-native image inputs
-- **Reliable OAuth and account flows** - Hardened PKCE/state validation, loopback callback handling, Antigravity client-version refresh, explicit Zed credential import, and sanitized login errors
-- **Windows and Kiro support** - Added platform-safe browser launching, resilient Windows startup behavior, Kiro tool/image/cancellation handling, and removed obsolete macOS language-server probing
-- **Cancellation and security** - Propagated request aborts through routed providers, bounded request bodies and streams, kept the control plane loopback/token-gated, and removed upstream response bodies from logs
+- **Provider compatibility and routing** - Improved Antigravity Gemini 3.1 request encoding, dynamic Copilot/model normalization, Codex reasoning-effort handling, and Responses API multimodal conversion for Zed, Codex, and Grok. Flow and account routes now preserve a sticky cursor and wrap through every eligible fallback entry.
+- **Six supported providers** - Antigravity, ChatGPT Codex, GitHub Copilot, Zed hosted models, Amazon Kiro, and xAI Grok can be imported, listed, quota-checked, and routed from the dashboard (subject to each provider's current access and terms).
+- **Multimodal input safety** - OpenAI `image_url` and Anthropic base64/remote image blocks are validated, size-bounded, SSRF-protected, and converted to provider-native inputs without dropping supported image parts.
+- **Reliable OAuth and account flows** - Hardened PKCE/state validation, loopback callback handling, Antigravity client-version refresh with pin/disable overrides, explicit Zed credential import, and sanitized login/diagnostic errors.
+- **Remote inference and Docker hardening** - The public listener is inference-only (default `8966`) and token-gated with `ANTI_API_PUBLIC_TOKEN`; the dashboard and management API remain loopback/token protected, including in container mode.
+- **Windows packaging and Kiro support** - Added platform-safe browser launching, resilient `start.bat` behavior, portable/WinGet bundles with checksums, and Kiro tool/image/cancellation handling; removed obsolete macOS language-server probing.
+- **Cancellation, limits, and log safety** - Propagated request aborts through routed providers, bounded request bodies and streams, applied cooldown-aware 404/429 failover, and removed upstream response bodies and credential material from logs.
+
+Release verification covered the TypeScript check, 190 Bun tests, Rust tests and release build, production dashboard bundle, archive layout, checksum generation, and local HTTP smoke checks. Live provider calls still require credentials owned or administered by the operator.
 
 ## What's New (v3.1.0)
 
@@ -100,12 +104,14 @@
 ## Features
 
 - **Flow + Account Routing** - Custom flows for non-official models, account chains for provider-native model IDs
-- **Six Providers** - Antigravity, Codex, GitHub Copilot, Zed hosted models, Kiro, and Grok
+- **Six Providers** - Antigravity, ChatGPT Codex, GitHub Copilot, Zed hosted models, Amazon Kiro, and xAI Grok
 - **Remote Access** - ngrok/cloudflared/localtunnel with one-click setup
+- **Inference-only public gateway** - Separate token-gated listener for remote clients; dashboard, credentials, logs, settings, and updater stay private
 - **Full Dashboard** - Quota monitoring, routing config, settings panel
-- **Cooldown-aware failover** - Cooldown-aware selection among authorized accounts after quota, auth, or transient upstream failures
+- **Cooldown-aware failover** - Sticky, circular account selection after quota, auth, 404, 429, or transient upstream failures
 - **Dual Format** - OpenAI and Anthropic API compatible
 - **Tool Calling** - Function calling for Claude Code and CLI tools
+- **Multimodal requests** - Validated text, image, tool, and streaming content across compatible provider adapters
 
 ### Security boundary
 
@@ -475,11 +481,15 @@ MIT
 
 ## 更新内容 (v3.2.0)
 
-- **Provider 兼容性修复** - 改进 Antigravity Gemini 3.1 请求编码、Copilot/模型动态规范化、reasoning effort，以及 Zed、Codex、Grok 的 Responses 多模态转换
-- **OpenAI 图片输入** - 对 Anthropic base64 与远程图片进行校验、大小限制和 SSRF 防护，并转换为 provider 原生图片输入
-- **OAuth 与账号流程加固** - 加强 PKCE/state 校验、回环回调、Antigravity 客户端版本刷新、显式 Zed 凭证导入，并清洗登录错误
-- **Windows 与 Kiro 支持** - 增加跨平台浏览器启动、可靠的 Windows 启动行为、Kiro 工具/图片/取消请求处理，并移除废弃的 macOS language-server 探测
-- **取消传播与安全** - 将请求取消传播到各路由 provider，限制请求体和流大小，控制面板保持回环/token 保护，并移除日志中的上游响应正文
+- **Provider 兼容性与路由** - 改进 Antigravity Gemini 3.1 请求编码、Copilot/模型动态规范化、Codex reasoning effort，以及 Zed、Codex、Grok 的 Responses 多模态转换；Flow 与 Account 路由现在保留粘性游标，并循环尝试所有可用的回退条目。
+- **六家 Provider** - 支持 Antigravity、ChatGPT Codex、GitHub Copilot、Zed 托管模型、Amazon Kiro 与 xAI Grok 的账号导入、列表、额度检查和路由（仍受各提供商当前权限与条款约束）。
+- **多模态输入安全** - 对 OpenAI `image_url` 以及 Anthropic base64/远程图片进行格式校验、大小限制和 SSRF 防护，并转换为 provider 原生输入，不再丢失受支持的图片部分。
+- **OAuth 与账号流程加固** - 加强 PKCE/state 校验、回环回调、Antigravity 客户端版本刷新（支持固定或禁用刷新）、显式 Zed 凭证导入，并清洗登录和诊断错误。
+- **远程推理与 Docker 安全边界** - 公共监听器是独立的仅推理网关（默认 `8966`），必须设置 `ANTI_API_PUBLIC_TOKEN`；控制面板和管理 API 在容器模式下也保持回环/token 保护。
+- **Windows 打包与 Kiro 支持** - 增加跨平台浏览器启动、可靠的 `start.bat` 行为、带校验和的 portable/WinGet 包，以及 Kiro 工具/图片/取消请求处理；移除废弃的 macOS language-server 探测。
+- **取消、限制与日志安全** - 将请求取消传播到各路由 provider，限制请求体和流大小，对 404/429 应用冷却与故障转移，并移除日志中的上游响应正文和凭证材料。
+
+发布前已完成 TypeScript 检查、190 个 Bun 测试、Rust 测试与 release 构建、生产面板打包、归档布局、校验和生成及本地 HTTP 冒烟测试。真实 Provider 请求仍需由操作者提供本人拥有或获授权管理的凭证。
 
 ## 更新内容 (v3.1.0)
 
@@ -523,12 +533,14 @@ MIT
 ## 特性
 
 - **Flow + Account 路由** - 自定义流控制非官方模型，官方模型使用账号链
-- **六家 Provider** - Antigravity、Codex、GitHub Copilot、Zed 托管模型、Kiro、Grok
+- **六家 Provider** - Antigravity、ChatGPT Codex、GitHub Copilot、Zed 托管模型、Amazon Kiro、xAI Grok
 - **远程访问** - ngrok/cloudflared/localtunnel 一键设置
+- **仅推理公共网关** - 独立且必须 token 鉴权的远程监听器；面板、凭证、日志、设置和更新器保持私有
 - **完整面板** - 配额监控、路由配置、设置面板
-- **自动轮换** - 429 错误时切换账号
+- **冷却感知故障转移** - 账号选择器保留粘性游标，并在额度、认证、404、429 或临时上游错误后循环切换
 - **双格式支持** - OpenAI 和 Anthropic API 兼容
 - **工具调用** - 支持 function calling，兼容 Claude Code
+- **多模态请求** - 在兼容的 provider 适配器之间校验并传递文本、图片、工具和流式内容
 
 ## Zed 账号说明
 
