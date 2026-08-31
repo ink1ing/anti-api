@@ -53,7 +53,10 @@ jobs:
         shell: bash
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "Anti-API v${VERSION}" --notes-file RELEASE_NOTES.md
+            gh release edit "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Anti-API v${VERSION}" \
+              --notes-file RELEASE_NOTES.md
           else
             gh release create "$TAG" \
               --title "Anti-API v${VERSION}" \
