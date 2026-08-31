@@ -25,9 +25,9 @@ jobs:
           TAG="$GITHUB_REF_NAME"
           VERSION="${TAG#v}"
           git archive --format=zip --prefix="anti-api-v${VERSION}/" HEAD > "anti-api-v${VERSION}.zip"
-          git archive --format=zip --prefix=anti-api-portable/ HEAD > anti-api-portable.zip
+          git archive --format=zip --prefix="anti-api-v${VERSION}-source/" HEAD > "anti-api-v${VERSION}-source.zip"
           git archive --format=tar --prefix="anti-api-v${VERSION}/" HEAD | gzip -n > "anti-api-v${VERSION}-source.tar.gz"
-          sha256sum "anti-api-v${VERSION}.zip" "anti-api-portable.zip" "anti-api-v${VERSION}-source.tar.gz" > SHA256SUMS.txt
+          sha256sum "anti-api-v${VERSION}.zip" "anti-api-v${VERSION}-source.zip" "anti-api-v${VERSION}-source.tar.gz" > SHA256SUMS.txt
           printf 'tag=%s\nversion=%s\n' "$TAG" "$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Write release notes
@@ -42,7 +42,7 @@ jobs:
 
           Known limits: Zed source credentials still require explicit re-import after source-token expiry; provider-policy questions remain contextual; live provider E2E requires user-owned credentials and was not run.
 
-          The package checksums are in `SHA256SUMS.txt`.
+          Source package checksums are in `SHA256SUMS.txt`; Windows updater and WinGet packages include adjacent `.sha256` files.
           EOF
 
       - name: Create or update GitHub Release
@@ -65,7 +65,7 @@ jobs:
           fi
           gh release upload "$TAG" \
             "anti-api-v${VERSION}.zip" \
-            anti-api-portable.zip \
+            "anti-api-v${VERSION}-source.zip" \
             "anti-api-v${VERSION}-source.tar.gz" \
             SHA256SUMS.txt \
             --clobber
