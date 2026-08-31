@@ -10,6 +10,7 @@ import type { ProviderAccount } from "~/services/auth/types"
 import { UpstreamError } from "~/lib/error"
 import { getDataDir } from "~/lib/data-dir"
 import { fetchZedAccountOverview } from "~/services/zed/chat"
+import { safeErrorMessage } from "~/lib/redaction"
 
 type ModelInfo = AntigravityModelInfo
 
@@ -104,7 +105,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: () => 
             if (settled) return
             settled = true
             clearTimeout(timer)
-            consola.warn(`${label} quota fetch failed, using cached data:`, error)
+            consola.warn(`${label} quota fetch failed, using cached data:`, safeErrorMessage(error))
             resolve(fallback())
         })
     })
@@ -241,7 +242,7 @@ async function fetchAntigravityQuotas(accounts: ProviderAccount[]): Promise<Acco
 
         if (lastError) {
             if (!isCertificateError(lastError) && !isAuthError(lastError)) {
-                consola.warn("Antigravity quota fetch failed:", lastError)
+                consola.warn("Antigravity quota fetch failed:", safeErrorMessage(lastError))
             }
         }
         const cachedBars = getCachedBars("antigravity", account.id)
@@ -337,8 +338,13 @@ function buildAntigravityBars(models: Record<string, ModelInfo>): AccountBar[] {
         "claude-opus-4-6-thinking",
         "gpt-oss-120b",
     ]
-    const gproIds = ["gemini-3-pro-low", "gemini-3-pro-high"]
-    const gflashIds = ["gemini-3-flash"]
+    const gproIds = [
+        "gemini-3-pro-low",
+        "gemini-3-pro-high",
+        "gemini-3.1-pro-low",
+        "gemini-3.1-pro-high",
+    ]
+    const gflashIds = ["gemini-3-flash", "gemini-3.1-flash", "gemini-3.1-flash-lite"]
 
     return [
         buildMergedBar("claude_gpt", "claude&gpt", models, claudeGptIds),
@@ -396,7 +402,7 @@ async function fetchCodexQuotas(accounts: ProviderAccount[]): Promise<AccountQuo
             }
         } catch (error) {
             if (!isCertificateError(error)) {
-                consola.warn("Codex quota fetch failed:", error)
+                consola.warn("Codex quota fetch failed:", safeErrorMessage(error))
             }
             const cachedBars = getCachedBars("codex", account.id)
             if (cachedBars) {
@@ -445,7 +451,7 @@ async function fetchCodexUsage(account: ProviderAccount): Promise<AccountBar[]> 
     }
 
     if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Codex usage error ${response.status}: ${response.text}`)
+        throw new Error(`Codex usage error ${response.status}`)
     }
 
     const data = response.data as any
@@ -488,7 +494,7 @@ async function fetchCopilotQuotas(accounts: ProviderAccount[]): Promise<AccountQ
                 bars: [bar],
             }
         } catch (error) {
-            consola.warn("Copilot quota fetch failed:", error)
+            consola.warn("Copilot quota fetch failed:", safeErrorMessage(error))
             const cachedBars = getCachedBars("copilot", account.id)
             if (cachedBars) {
                 return {
@@ -528,7 +534,7 @@ async function fetchZedQuotas(accounts: ProviderAccount[]): Promise<AccountQuota
                 bars,
             }
         } catch (error) {
-            consola.warn("Zed quota fetch failed:", error)
+            consola.warn("Zed quota fetch failed:", safeErrorMessage(error))
             const cachedBars = getCachedBars("zed", account.id)
             if (cachedBars) {
                 return {
@@ -598,7 +604,7 @@ async function fetchCopilotPremium(account: ProviderAccount): Promise<AccountBar
     }
 
     if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Copilot entitlement error ${response.status}: ${response.text}`)
+        throw new Error(`Copilot entitlement error ${response.status}`)
     }
 
     const data = response.data as any

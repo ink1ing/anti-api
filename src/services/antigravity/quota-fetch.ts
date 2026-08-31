@@ -4,8 +4,6 @@ import { UpstreamError } from "~/lib/error"
 import { getAntigravityUserAgent } from "~/lib/antigravity-client"
 
 const CLOUD_CODE_BASE_URL = "https://cloudcode-pa.googleapis.com"
-const USER_AGENT = getAntigravityUserAgent()
-
 export type AntigravityModelInfo = {
     remainingFraction?: number
     resetTime?: string
@@ -23,7 +21,7 @@ export async function fetchAntigravityModels(
         headers: {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
-            "User-Agent": USER_AGENT,
+            "User-Agent": getAntigravityUserAgent(),
         },
         body: JSON.stringify({ project }),
     })

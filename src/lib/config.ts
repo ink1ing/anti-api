@@ -21,6 +21,12 @@ export const AVAILABLE_MODELS = [
     { id: "gemini-3-pro-low", name: "Gemini 3 Pro (Low)" },
     { id: "gemini-3-flash", name: "Gemini 3 Flash" },
 
+    // Gemini 3.1 系列（Antigravity 当前可用的稳定 ID）
+    { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro (High)" },
+    { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
+    { id: "gemini-3.1-flash", name: "Gemini 3.1 Flash" },
+    { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite" },
+
     // GPT-OSS
     { id: "gpt-oss-120b", name: "GPT-OSS 120B (Medium)" },
 ]

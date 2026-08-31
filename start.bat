@@ -95,7 +95,8 @@ if "!AUTO_RESTART!"=="true" (
     )
 )
 
-goto :shutdown
+    if not "!API_EXIT!"=="0" if not "!API_EXIT!"=="130" if not "!API_EXIT!"=="143" goto :error
+    goto :shutdown
 
 :run_api_once
 set "API_PID="
@@ -235,4 +236,5 @@ exit /b 0
 call :shutdown
 echo.
 echo Startup failed.
+if not "%ANTI_API_NO_PAUSE%"=="1" pause
 exit /b 1
