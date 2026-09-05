@@ -174,7 +174,7 @@ docker run -d --name anti-api \
   -e ANTI_API_CONTAINER_CONTROL_PLANE=1 \
   -e ANTI_API_CONTROL_TOKEN="$ANTI_API_CONTROL_TOKEN" \
   -v anti-api-data:/app/data \
-  ghcr.io/ink1ing/anti-api:latest
+  ghcr.io/silasxbt/anti-api:latest
 ```
 
 Or with Compose (pulls the prebuilt image, then runs in the background):

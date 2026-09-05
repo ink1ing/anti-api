@@ -167,7 +167,7 @@ if exist "%TMPDIR%" rmdir /S /Q "%TMPDIR%" >nul 2>&1
 mkdir "%TMPDIR%" >nul 2>&1
 
 echo Checking latest release...
-for /f "usebackq delims=" %%L in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$r=Invoke-RestMethod -Headers @{ 'User-Agent'='anti-api-updater' } -Uri 'https://api.github.com/repos/ink1ing/anti-api/releases/latest'; foreach($a in $r.assets){ if($a.name -eq 'anti-api-portable.zip'){ $a.browser_download_url }; if($a.name -eq 'anti-api-portable.zip.sha256'){ $a.browser_download_url } }"`) do (
+for /f "usebackq delims=" %%L in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$r=Invoke-RestMethod -Headers @{ 'User-Agent'='anti-api-updater' } -Uri 'https://api.github.com/repos/silasxbt/anti-api/releases/latest'; foreach($a in $r.assets){ if($a.name -eq 'anti-api-portable.zip'){ $a.browser_download_url }; if($a.name -eq 'anti-api-portable.zip.sha256'){ $a.browser_download_url } }"`) do (
     if not defined ZIPURL (
         set "ZIPURL=%%L"
     ) else if not defined HASHURL (

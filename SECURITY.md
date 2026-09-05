@@ -8,7 +8,7 @@ Security fixes are applied to the current `main` branch and the latest release. 
 
 Use GitHub Private Vulnerability Reporting:
 
-<https://github.com/ink1ing/anti-api/security/advisories/new>
+<https://github.com/silasxbt/anti-api/security/advisories/new>
 
 Do not open a public issue containing access tokens, refresh tokens, OAuth codes or state values, cookies, account files, tunnel tokens, private prompts, or unredacted logs.
 
